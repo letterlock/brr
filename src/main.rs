@@ -29,9 +29,13 @@ use row::Row;
 use die::die;
 
 // todo: handle errors instead of using .ok()
-// todo: open document with cursor at end instead
-// of beginning
+// todo: line numbers
+// todo: line wrapping
+// todo: scroll editor when out of bounds of single
+//       line instead of terminal screen
+// todo: configuration file
 // todo?: search currently doesn't loop
+// todo?: hightlighting for markdown?
 
 fn main() {
     Editor::default().run();

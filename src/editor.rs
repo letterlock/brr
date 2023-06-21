@@ -13,7 +13,7 @@ use crossterm::{
         KeyCode, 
         KeyModifiers,
         KeyEvent,
-    }, 
+    },
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION"); // currently only for welcome message
@@ -59,6 +59,8 @@ pub struct Editor {
 
 impl Editor {
     pub fn run(&mut self) {
+        Terminal::cursor_style(); // this could be a setting at some point
+        self.cursor_to_end();
         loop {
             if let Err(error_msg) = self.refresh_screen() {
                 die(&error_msg);
@@ -71,7 +73,7 @@ impl Editor {
             }
         }
     }
-    
+
     pub fn default() -> Self {
         let args: Vec<String> = env::args().collect();
         let mut initial_status = 
@@ -88,8 +90,6 @@ impl Editor {
         } else {
             Document::default()
         };
-
-        Terminal::cursor_style();
 
         Self { 
             should_quit: false,
@@ -118,6 +118,22 @@ impl Editor {
         }
         Terminal::cursor_show();
         Terminal::flush()
+    }
+
+    pub fn cursor_to_end(&mut self) {
+        let end_y = self.document.len().saturating_sub(1);
+        let end_x = if let Some(row) = self.document.row(end_y) {
+            row.len()
+        } else {
+            0
+        };
+
+        
+        self.cursor_position = CursorPosition {
+            cursor_x: end_x,
+            cursor_y: end_y,
+        };
+        self.scroll();
     }
 
     fn draw_status_bar(&self) {

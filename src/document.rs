@@ -25,6 +25,7 @@ impl Document {
             file_name: Some(file_name.to_owned()),
             is_dirty: false,
         })
+        
     }
     
     pub fn row(&self, index: usize) -> Option<&Row> {
