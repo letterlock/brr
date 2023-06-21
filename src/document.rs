@@ -1,5 +1,6 @@
 use crate::CursorPosition;
 use crate::Row;
+use crate::SearchDirection;
 use std::fs;
 use std::io::{Error, Write};
 
@@ -109,5 +110,42 @@ impl Document {
 
     pub fn is_dirty(&self) -> bool {
         self.is_dirty
+    }
+
+    pub fn find(&self, query: &str, at: &CursorPosition, direction: SearchDirection) -> Option<CursorPosition> {
+        if at.cursor_y >= self.rows.len() {
+            return None;
+        };
+        
+        let mut position = CursorPosition { cursor_x: at.cursor_x, cursor_y: at.cursor_y};
+        let start = if direction == SearchDirection::Forward {
+            at.cursor_y
+        } else {
+            0
+        };
+        let end = if direction == SearchDirection::Forward {
+            self.rows.len()
+        } else {
+            at.cursor_y.saturating_add(1)
+        };
+        
+        for _ in start..end {
+            if let Some(row) = self.rows.get(position.cursor_y) {
+                if let Some(x) = row.find(query, position.cursor_x, direction) {
+                    position.cursor_x = x;
+                    return Some(position);
+                }
+                if direction == SearchDirection::Forward {
+                    position.cursor_y = position.cursor_y.saturating_add(1);
+                    position.cursor_x = 0;
+                } else {
+                    position.cursor_y = position.cursor_y.saturating_sub(1);
+                    position.cursor_x = self.rows[position.cursor_y].len();
+                }
+            } else {
+                return None;
+            }
+        }
+        None
     }
 }

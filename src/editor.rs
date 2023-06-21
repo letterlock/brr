@@ -8,9 +8,11 @@ use std::time::Instant;
 use crossterm::{
     style::{ Colors, Color },
     event::{ 
+        read,
         Event, 
         KeyCode, 
-        KeyModifiers
+        KeyModifiers,
+        KeyEvent,
     }, 
 };
 
@@ -19,7 +21,13 @@ const STATUS_FG_COLOR: Color = Color::Rgb{r: 63, g: 63, b: 63};
 const STATUS_BG_COLOR: Color = Color::Rgb{r: 239, g: 239, b: 239};
 const QUIT_TIMES: u8 = 3;
 
-#[derive(Default)]
+#[derive(PartialEq, Clone, Copy)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
+}
+
+#[derive(Default, Clone)]
 pub struct CursorPosition {
     pub cursor_x: usize,
     pub cursor_y: usize,
@@ -66,7 +74,8 @@ impl Editor {
     
     pub fn default() -> Self {
         let args: Vec<String> = env::args().collect();
-        let mut initial_status = String::from("help: ctrl-s to save | ctrl-q to quit");
+        let mut initial_status = 
+            String::from("help: ctrl-f to find | ctrl-s to save | ctrl-q to quit");
         let document = if let Some(file_name) = args.get(1) {
             let doc = Document::open(file_name);
 
@@ -167,7 +176,8 @@ impl Editor {
     fn save (&mut self) {
         if self.document.file_name.is_none() {
             // fix error handling here
-            let new_name = self.prompt("save as: ").unwrap_or(None);
+            let new_name = self.prompt(
+                "save as: ", |_, _, _| {}).unwrap_or(None);
             if new_name.is_none() {
                 self.status_message = StatusMessage::from("save aborted".to_owned());
                 return;
@@ -180,6 +190,43 @@ impl Editor {
         } else {
             self.status_message =
                 StatusMessage::from("error writing file".to_owned());
+        }
+    }
+
+    fn search(&mut self) {
+        let old_position = self.cursor_position.clone();
+        let mut direction = SearchDirection::Forward;
+        // todo: i hate this code block and i'd really like to refactor it to
+        // something actually readable at some point
+        let query = self.prompt(
+            "search (esc to cancel, arrows to navigate): ",
+            |editor, key, query| {
+                let mut moved = false;
+                
+                match key.code {
+                    KeyCode::Right 
+                    | KeyCode::Down => {
+                        direction = SearchDirection::Forward;
+                        editor.move_cursor(KeyCode::Right);
+                        moved = true;
+                    },
+                    KeyCode::Left
+                    | KeyCode::Up => direction = SearchDirection::Backward,
+                    _ => direction = SearchDirection::Forward,
+                };
+                if let Some(position) = 
+                editor.document.find(query, &editor.cursor_position, direction) {
+                    editor.cursor_position = position;
+                    editor.scroll();
+                } else if moved {
+                    editor.move_cursor(KeyCode::Left);
+                };
+            },
+        ).unwrap_or(None); 
+
+        if query.is_none() {
+            self.cursor_position = old_position;
+            self.scroll();
         }
     }
 
@@ -200,6 +247,7 @@ impl Editor {
                     self.should_quit = true;
                 },
                 (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(),
+                (KeyModifiers::CONTROL, KeyCode::Char('f')) => self.search(),
                 (_, KeyCode::Char(character)) => {
                     self.document.insert(&self.cursor_position, character);
                     self.move_cursor(KeyCode::Right);
@@ -360,13 +408,19 @@ impl Editor {
         }
     }
 
-    fn prompt(&mut self, prompt: &str) -> Result<Option<String>, std::io::Error> {
+    // this whole closures and callbacks thing is a bit beyond me
+    // so for now i'm just going to hope nothing breaks here
+    // too bad!
+    fn prompt<C>(&mut self, prompt: &str, mut callback: C) -> Result<Option<String>, std::io::Error> 
+    where
+        C: FnMut(&mut Self, KeyEvent, &String),
+    {
         let mut user_input = String::new();
 
         loop {
             self.status_message = StatusMessage::from(format!("{prompt}{user_input}"));
             self.refresh_screen()?;
-            let event = Terminal::read_event(&mut self.terminal)?;
+            let event = read().unwrap(); // handle this and ideally use fn already in Terminal.rs
 
             if let Event::Key(key) = event {
                 match key.code {
@@ -383,6 +437,7 @@ impl Editor {
                     },
                     _ => (),
                 };
+                callback(self, key, &user_input);
             }
         }
         self.status_message = StatusMessage::from(String::new());
