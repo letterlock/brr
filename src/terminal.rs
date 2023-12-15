@@ -1,128 +1,145 @@
-use crate::{CursorPosition, die};
-use std::io::{ self, stdout, Write };
-use std::env;
+use crate::{Position, die::die};
+
 use crossterm::{
-    style::{
-        Colors,
-        SetColors,
-        ResetColor,
-    },
-    event::{ 
-        Event,  
-        read, 
-    }, 
-    terminal::{ 
-        enable_raw_mode,
+    terminal::{
         disable_raw_mode,
-        size,
-        Clear, 
+        enable_raw_mode,
+        Clear,
         ClearType,
+        size, LeaveAlternateScreen, EnterAlternateScreen,
     },
-    ExecutableCommand,
-    QueueableCommand,
-    cursor::{ 
+    cursor::{
+        MoveToNextLine,
         MoveTo,
         Hide,
         Show,
-        SetCursorStyle,
-     },
+    },
+    style::{
+        Print,
+        SetAttribute,
+        Attribute::{
+            Reverse,
+            NoReverse,
+        },
+    },
+    ExecutableCommand, 
+    QueueableCommand,
+};
+use std::io::{
+    Write,
+    Stdout,
+    stdout,
+    Error,
 };
 
 pub struct Terminal {
-    pub term_size: TermSize,
-}
-
-pub struct TermSize {
-    pub width: u16,
-    pub height: u16,
+    pub stdout: Stdout,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl Terminal {
     pub fn default() -> Self {
-        // fix error handling here
-        let term_size = size().unwrap();
-        if let Err(error_msg) = enable_raw_mode() {
-            die(&error_msg);
-        };
+        let (columns, rows) = Terminal::get_term_size();
 
         Self {
-            term_size: TermSize {
-                width: term_size.0,
-                height: term_size.1.saturating_sub(2),
-            }
+            stdout: stdout(),
+            width: columns,
+            height: rows.saturating_sub(2),
         }
     }
 
-    pub fn size(&self) -> &TermSize {
-        &self.term_size
+    pub fn get_term_size() -> (usize, usize) {
+        match size() {
+            Ok(size) => (size.0 as usize, size.1 as usize),
+            Err(error_msg) => {
+                die(error_msg);
+                (0, 0)
+            },
+        }
     }
 
-    pub fn quit() {
-        Terminal::reset_colors();
-        Terminal::clear_screen();
-        if let Err(error_msg) = disable_raw_mode() {
-            println!("could not disable raw mode: {error_msg}\r");
-        } else {
-            println!("goodbye\r");
-        };
+    pub fn init() -> Result<(), Error> {
+        stdout().execute(EnterAlternateScreen)?;
+        enable_raw_mode()?;
+        Ok(())
+    }
+
+    pub fn quit() -> Result<(), Error> {
+        stdout().queue(Hide)?;
+        stdout().queue(MoveTo(0, 0))?;
+        stdout().queue(Clear(ClearType::All))?;
+        stdout().queue(Show)?;
+        stdout().queue(LeaveAlternateScreen)?;
+        stdout().queue(Print("goodbye\r\n"))?;
+        disable_raw_mode()?;
+        stdout().flush()?;
+        Ok(())
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    pub fn cursor_position(position: &CursorPosition) {
-        let CursorPosition{mut cursor_x, mut cursor_y} = position;
-        cursor_x = cursor_x.saturating_add(1);
-        cursor_y = cursor_y.saturating_add(1);
-        let x = cursor_x as u16;
-        let y = cursor_y as u16;
-        stdout().queue(MoveTo(x.saturating_sub(1), y.saturating_sub(1))).ok();
+    pub fn move_cursor(&mut self, position: &Position) -> Result<(), Error> {
+        let Position{mut x, mut y} = position;
+        // add 1 to change from 0-indexing to the 1-indexing that
+        // terminals use
+        x = x.saturating_add(1);
+        y = y.saturating_add(1);
+        let new_x = x;
+        let new_y = y;
+        self.stdout.queue(MoveTo(
+            new_x.saturating_sub(1) as u16,
+            new_y.saturating_sub(1) as u16
+        ))?;
+        Ok(())
     }
 
-    pub fn flush() -> Result<(), std::io::Error> {
-        io::stdout().flush()
+    pub fn clear_line(&mut self) -> Result<(), Error> {
+        self.stdout.queue(Clear(ClearType::UntilNewLine))?;
+        Ok(())
     }
 
-    pub fn read_event(&mut self) -> Result<Event, std::io::Error> {
-        // below was once enclosed in a loop that is currently redundant
-        // just noting this in case it becomes relevant later
-        let event = read();
-    
-        if let Ok(Event::Resize(new_width, new_height)) = event {
-            self.term_size.width = new_width;
-            if env::consts::OS == "windows" {
-                self.term_size.height = new_height.saturating_sub(1);
-            } else {
-                self.term_size.height = new_height.saturating_sub(2);
-            }
-        };
-        
-        event
+    pub fn new_line(&mut self) -> Result<(), Error> {
+        self.stdout.queue(MoveToNextLine(1))?;
+        Ok(())
     }
 
-    pub fn cursor_hide() {
-        stdout().execute(Hide).ok();
+    pub fn queue_print(&mut self, to_print: &str) -> Result<(), Error> {
+        self.stdout.queue(Print(to_print))?;
+        Ok(())
     }
 
-    pub fn cursor_show() {
-        stdout().execute(Show).ok();
+    pub fn cursor_hide(&mut self) -> Result<(), Error> {
+        self.stdout.queue(Hide)?;
+        Ok(())
     }
 
-    pub fn cursor_style() {
-        stdout().execute(SetCursorStyle::BlinkingBlock).ok();
-    }
-    
-    pub fn clear_screen() {
-        stdout().execute(Clear(ClearType::All)).ok();
+    pub fn cursor_show(&mut self) -> Result<(), Error> {
+        self.stdout.queue(Show)?;
+        Ok(())
     }
 
-    pub fn clear_current_line() {
-        stdout().execute(Clear(ClearType::CurrentLine)).ok();
+    pub fn flush(&mut self) -> Result<(), Error> {
+        self.stdout.flush()?;
+        Ok(())
     }
 
-    pub fn set_colors(colors: Colors) {
-        stdout().execute(SetColors(colors)).ok();
+    pub fn reverse_colors(&mut self) -> Result<(), Error>{
+        self.stdout.queue(SetAttribute(Reverse))?;
+        Ok(())
     }
 
-    pub fn reset_colors() {
-        stdout().execute(ResetColor).ok();
+    pub fn no_reverse_colors(&mut self) -> Result<(), Error>{
+        self.stdout.queue(SetAttribute(NoReverse))?;
+        Ok(())
+    }
+
+    pub fn clear_all(&mut self) -> Result<(), Error> {
+        self.stdout.execute(Clear(ClearType::All))?;
+        Ok(())
+    }
+
+    pub fn cursor_hide_now(&mut self) -> Result<(), Error> {
+        self.stdout.execute(Hide)?;
+        Ok(())
     }
 }

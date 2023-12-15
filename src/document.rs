@@ -1,152 +1,366 @@
-use crate::CursorPosition;
-use crate::Row;
-use crate::SearchDirection;
-use std::fs;
-use std::io::{Error, Write};
+use crate::FileRow;
+use crate::DisplayRow;
+use crate::Terminal;
+use crate::AppendBuffer;
+use crate::die;
 
-#[derive(Default)]
+use unicode_segmentation::UnicodeSegmentation;
+// use words_count::WordsCount;
+use std::{
+    time::Instant,
+    fs::{
+        read_to_string,
+        File,
+    },
+    io::{
+        Error,
+        Write,
+    },
+};
+
+// #[derive(Default)]
 pub struct Document {
-    rows: Vec<Row>,
-    pub file_name: Option<String>,
-    is_dirty: bool,
+    pub file_name: String,
+    pub file_rows: Vec<FileRow>,
+    pub display_rows: Vec<DisplayRow>,
+    pub append_buffer: AppendBuffer,
+    pub last_edit: Instant,
+    pub word_count: usize,
+    pub char_count: usize,
 }
 
 impl Document {
-    pub fn open(file_name: &str) -> Result<Self, std::io::Error> {
-        let contents = fs::read_to_string(file_name)?;
-        let mut rows = Vec::new();
+    pub fn create(file_name: &str) -> Self {
+        let file_rows = vec![FileRow::default()];
 
-        for value in contents.lines() {
-            rows.push(Row::from(value));
+        Self { 
+            file_name: file_name.to_string(),
+            file_rows,
+            display_rows: Vec::new(),
+            append_buffer: AppendBuffer::default(),
+            last_edit: Instant::now(),
+            word_count: 0,
+            char_count: 0,
         }
+    }
 
-        Ok(Self { 
-            rows,
-            file_name: Some(file_name.to_owned()),
-            is_dirty: false,
-        })
+    pub fn open(file_name: &str) -> Self {
+        let file = read_to_string(file_name);
+        let mut file_rows = Vec::new();
+        let mut word_count = 0;
+        let mut char_count = 0;
         
-    }
-    
-    pub fn row(&self, index: usize) -> Option<&Row> {
-        self.rows.get(index)
-    }
-    
-    pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    pub fn insert_newline(&mut self, at: &CursorPosition) {
-        if at.cursor_y > self.rows.len() {
-            return;
-        }
-        if at.cursor_y == self.rows.len() {
-            self.rows.push(Row::default());
-            return;        
-        }
-        let new_row = self.rows[at.cursor_y].split(at.cursor_x);
-        
-        self.rows.insert(at.cursor_y.saturating_add(1), new_row);
-
-    }
-
-    pub fn insert(&mut self, at: &CursorPosition, character: char) {
-        if at.cursor_y > self.rows.len() {
-            return;
+        match file {
+            Ok(content) => {
+                let counts = words_count::count(&content);
+                        // .replace(&['\n', '\r'][..], " "));
+                word_count = counts.words;
+                char_count = counts.characters;
+                // word_count = content.count();
+                // char_count = content
+                //     .split(&['\n', '\r'][..])
+                //     .collect::<String>()
+                //     .graphemes(true)
+                //     .count();
+                for line in content.lines() {
+                    file_rows.push(FileRow::from(line));
+                }
+            },
+            Err(error_msg) => die(error_msg),
         }
 
-        self.is_dirty = true;
-        
-        if character == '\n' {
-            self.insert_newline(at);
-            return;
-        }
-        if at.cursor_y == self.rows.len() {
-            let mut row = Row::default();
-            row.insert(0, character);
-            self.rows.push(row);
-        } else {
-            let row = &mut self.rows[at.cursor_y];
-            row.insert(at.cursor_x, character);
+        Self { 
+            file_name: file_name.to_string(),
+            file_rows,
+            display_rows: Vec::new(),
+            append_buffer: AppendBuffer::default(),
+            last_edit: Instant::now(),
+            word_count,
+            char_count,
         }
     }
 
-    pub fn delete(&mut self, at: &CursorPosition) {
-        let len = self.rows.len();
+    pub fn save(&mut self, words: bool) -> Result<(), Error> {
+        // BAD: brr should have some way to make sure your
+        // file doesn't get screwed because of an error
+        // on the program's side
+        let mut file = File::create(&self.file_name)?;
+        let mut contents = String::new();
 
-        if at.cursor_y >= len {
-            return;
-        }
-
-        self.is_dirty = true;
-
-        if at.cursor_x == self.rows[at.cursor_y].len() && at.cursor_y.saturating_add(1) < len {
-            let next_row = self.rows.remove(at.cursor_y.saturating_add(1) + 1);
-            let row = &mut self.rows[at.cursor_y];
-            
-            row.append(&next_row);
-        } else {
-            let row = &mut self.rows[at.cursor_y];
-            
-            row.delete(at.cursor_x);
-        }
-    }
-
-    pub fn save(&mut self) -> Result<(), Error> {
-        if let Some(file_name) = &self.file_name {
-            let mut file = fs::File::create(file_name)?;
-            
-            for row in &self.rows {
-                file.write_all(row.as_bytes())?;
-                file.write_all(b"\n")?;
+        for (index, row) in self.file_rows.iter().enumerate() {
+            contents.push_str(&row.content);
+            if index != self.file_rows.len().saturating_sub(1) {
+                contents.push('\n');
             }
-            self.is_dirty = false;
-        }
+        };
+        if words {
+            if let Some((split_at_index, ..)) = self.append_buffer.buffer
+            .unicode_word_indices()
+            .nth(5) {
+                let split_string = self.append_buffer.buffer
+                .split_at(split_at_index);
+                let first_five_words = split_string.0;
+                let remainder = split_string.1; 
+
+                contents.push_str(first_five_words);
+
+                self.append_buffer.buffer = remainder.to_string();
+            };
+        } else if !self.append_buffer.buffer.is_empty() {
+            contents.push_str(&self.append_buffer.buffer);
+            self.append_buffer.buffer.clear();
+        };
+        // put a newline at the end of the file for
+        // unix compliance :^)
+        contents.push('\n');
+        file.write_all(contents.as_bytes())?;
+
+        self.last_edit = Instant::now();
+        
+        self.sync_file_rows();
+        self.wrap_file();
+        self.wrap_buffer();
         Ok(())
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.is_dirty
+    pub fn sync_file_rows(&mut self) {
+        let file = read_to_string(self.file_name.clone());
+        let mut file_rows = Vec::new();
+        let mut word_count = 0;
+        let mut char_count = 0;
+
+        match file {
+            Ok(content) => {
+                for line in content.lines() {
+                    let counts = words_count::count(&content);
+                        // .replace(&['\n', '\r'][..], " "));
+                    word_count = counts.words;
+                    char_count = counts.characters;
+                    // word_count = content.unicode_words().count();
+                    // char_count = content
+                    // .split(&['\n', '\r'][..])
+                    // .collect::<String>()
+                    // .graphemes(true)
+                    // .count();
+                    file_rows.push(FileRow::from(line));
+                }
+            },
+            Err(error_msg) => die(error_msg),
+        }
+
+        self.word_count = word_count;
+        self.char_count = char_count;
+        self.file_rows = file_rows;
     }
 
-    pub fn find(&self, query: &str, at: &CursorPosition, direction: SearchDirection) -> Option<CursorPosition> {
-        if at.cursor_y >= self.rows.len() {
-            return None;
-        };
+    // BAD: this currently reflows/renders the ENTIRE file
+    // which is inefficient. currently works fine, but i'd
+    // like to find a better solution
+    pub fn wrap_file(&mut self) {
+        self.display_rows.clear();
         
-        let mut position = CursorPosition { cursor_x: at.cursor_x, cursor_y: at.cursor_y};
-        let start = if direction == SearchDirection::Forward {
-            at.cursor_y
-        } else {
-            0
-        };
-        let end = if direction == SearchDirection::Forward {
-            self.rows.len()
-        } else {
-            at.cursor_y.saturating_add(1)
-        };
+        let max_width = Terminal::get_term_size().0;
+        let mut total_len = 0;
         
-        for _ in start..end {
-            if let Some(row) = self.rows.get(position.cursor_y) {
-                if let Some(x) = row.find(query, position.cursor_x, direction) {
-                    position.cursor_x = x;
-                    return Some(position);
+        for row in &self.file_rows {            
+            // wrap display line if necessary
+            if row.len >= max_width {
+                // split row into vector of substrings by word boundaries
+                // let row_chunks = row.content[..].split_word_bounds().collect::<Vec<&str>>();
+                let row_chunks = row.content[..].split_inclusive(' ').collect::<Vec<&str>>();
+                
+                // count graphemes in each element of the vector
+                // then push to new vector including their length
+                let mut counted_chunks = Vec::new();
+                
+                for chunk in row_chunks {
+                    counted_chunks.push((chunk.graphemes(true).count(), chunk));
                 }
-                if direction == SearchDirection::Forward {
-                    position.cursor_y = position.cursor_y.saturating_add(1);
-                    position.cursor_x = 0;
-                } else {
-                    position.cursor_y = position.cursor_y.saturating_sub(1);
-                    position.cursor_x = self.rows[position.cursor_y].len();
+                
+                // concat chunks until size would become larger than max width
+                // then push the resulting string as a display row and set the
+                // size and chunk to the overflowing chunk
+                let mut chunk_len = 0;
+                let mut chunked_row = String::new();
+
+                for chunk in counted_chunks {
+                    if (chunk_len + chunk.0) < max_width {
+                        chunk_len = chunk_len.saturating_add(chunk.0);
+                        chunked_row.push_str(chunk.1);
+                    } else {
+                        total_len = chunk_len.saturating_add(total_len);
+
+                        // this is a finished display-length row
+                        let wrapped_row = DisplayRow {
+                            content: chunked_row.clone(),
+                            len: chunk_len,
+                            is_buffer: false,
+                        };
+
+                        self.display_rows.push(wrapped_row);
+
+                        chunk_len = chunk.0;
+                        chunked_row = chunk.1.to_string();
+                    }
                 }
+                total_len = chunk_len.saturating_add(total_len);
+                // this is the remainder of a file row
+                let wrapped_row = DisplayRow {
+                    content: chunked_row.clone(),
+                    len: chunk_len,
+                    is_buffer: false,
+                };
+                
+                self.display_rows.push(wrapped_row);
             } else {
-                return None;
+                total_len = row.len.saturating_add(total_len);
+                let display_row = DisplayRow { 
+                    content: row.content.clone(),
+                    len: row.len, 
+                    is_buffer: false,
+                };
+
+                self.display_rows.push(display_row);
             }
         }
-        None
+        if let Some(last_display_row) = self.display_rows.last() {
+            self.append_buffer.last_drow = last_display_row.content.clone();
+        };
+        self.display_rows.pop();
+        // self.char_count = total_len;
+    }
+
+    pub fn wrap_buffer(&mut self) {
+        let max_width = Terminal::get_term_size().0;
+        let mut total_len = 0;
+
+        // BAD: not ideal to run over the entire vector to clear
+        // non buffer rows, but its better than reflowing the
+        // entire file so i'll take it for now
+        // check if row is part of the buffer or not       
+        self.display_rows.retain(|row| !row.is_buffer);
+
+        let to_wrap = format!("{}{}", self.append_buffer.last_drow, self.append_buffer.buffer);
+
+        for line in to_wrap.lines() {
+            // count the line's length in graphemes instead of chars or bytes
+            let line_len = line.graphemes(true).count();
+            
+            // wrap if necessary
+            if line_len >= max_width {
+                // split line into vector of substrings by word boundaries
+                // let line_chunks = line[..].split_word_bounds().collect::<Vec<&str>>();
+                let line_chunks = line[..].split_inclusive(' ').collect::<Vec<&str>>();
+
+                // count graphemes in each element of the vector
+                // then push to new vector including their length
+                let mut counted_chunks = Vec::new();
+
+                for chunk in line_chunks {
+                    counted_chunks.push((chunk.graphemes(true).count(), chunk));
+                }
+
+                // concat chunks until size would become larger than max width
+                // then push resulting string as a display row and reset the
+                // size and chunk to the overflow
+                let mut chunk_len = 0;
+                let mut chunked_row = String::new();
+
+                for chunk in counted_chunks {
+                    if (chunk_len + chunk.0) < max_width {
+                        chunk_len = chunk_len.saturating_add(chunk.0);
+                        chunked_row.push_str(chunk.1);
+                    } else {
+                        total_len = chunk_len.saturating_add(total_len);
+
+                        // this is a finished wrapped display row
+                        let wrapped_row = DisplayRow {
+                            content: chunked_row.clone(),
+                            len: chunk_len,
+                            is_buffer: true,
+                        };
+
+                        self.display_rows.push(wrapped_row);
+
+                        chunk_len = chunk.0;
+                        chunked_row = chunk.1.to_string();
+                    }
+                }
+                total_len = chunk_len.saturating_add(total_len);
+                // this is the remainder of a line
+                let wrapped_row = DisplayRow {
+                    content: chunked_row.clone(),
+                    len: chunk_len,
+                    is_buffer: true,
+                };
+                
+                self.display_rows.push(wrapped_row);
+            } else {
+                total_len = line_len.saturating_add(total_len);
+                let display_row = DisplayRow { 
+                    content: line.to_string(),
+                    len: line_len, 
+                    is_buffer: true,
+                };
+
+                self.display_rows.push(display_row);
+            }
+        }
+        // if the end of the buffer is a newline,
+        // add an extra row so lines() doesn't cut it off
+        if self.append_buffer.buffer.ends_with('\n') {
+            let display_row = DisplayRow { 
+                content: String::new(),
+                len: 0, 
+                is_buffer: true,
+            };
+
+            self.display_rows.push(display_row);
+        }
+        // self.append_buffer.char_count = total_len;
+    }
+
+    pub fn render_buffer(&self, row_to_render: &DisplayRow) -> Option<(String, String)> {
+      let content = &row_to_render.content.clone();
+
+      if content.contains(&self.append_buffer.last_drow) {
+          let split_index = self.append_buffer.last_drow.len();
+          let (last_drow, buffer) = content.split_at(split_index);
+          let (mut rendered_last_drow, mut rendered_buffer) = (String::new(), String::new());
+
+          for grapheme in last_drow[..]
+          .graphemes(true) {
+              if grapheme == "\t" {
+                  rendered_last_drow.push_str("  ");
+              } else {
+                  rendered_last_drow.push_str(grapheme);
+              }
+          };
+          for grapheme in buffer[..]
+          .graphemes(true) {
+              if grapheme == "\t" {
+                  rendered_buffer.push_str("  ");
+              } else {
+                  rendered_buffer.push_str(grapheme);
+              }
+          };
+
+          return Some((rendered_last_drow, rendered_buffer));
+      }
+      None
+  }
+
+    pub fn insert(&mut self, char: char) {
+        self.append_buffer.insert(char);
+        self.wrap_buffer();
+    }
+
+    pub fn delete(&mut self) {
+        self.append_buffer.delete();
+        self.wrap_buffer();
+    }
+
+    pub fn get_display_row(&self, index: usize) -> Option<&DisplayRow> {
+        self.display_rows.get(index)
     }
 }

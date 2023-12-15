@@ -1,44 +1,57 @@
-use crate::Document;
-use crate::Row;
-use crate::Terminal;
 use crate::die;
-use std::env;
-use core::time::Duration;
-use std::time::Instant;
-use crossterm::{
-    style::{ Colors, Color },
-    event::{ 
-        read,
-        Event, 
-        KeyCode, 
-        KeyModifiers,
-        KeyEvent,
+use crate::Terminal;
+use crate::Document;
+use crate::row::DisplayRow;
+
+use std::{
+    path::Path,
+    io::Error,
+    time::{
+        Duration,
+        Instant,
     },
+    env::consts::OS,
+};
+use crossterm::event::KeyEventKind;
+use crossterm::event::{
+    Event,
+    read,
+    poll,
+    KeyEvent,
+    KeyModifiers,
+    KeyCode,
 };
 
-const VERSION: &str = env!("CARGO_PKG_VERSION"); // currently only for welcome message
-const STATUS_FG_COLOR: Color = Color::Rgb{r: 63, g: 63, b: 63};
-const STATUS_BG_COLOR: Color = Color::Rgb{r: 239, g: 239, b: 239};
+//const VERSION: &str = env!("CARGO_PKG_VERSION");
 const QUIT_TIMES: u8 = 3;
 
-#[derive(PartialEq, Clone, Copy)]
-pub enum SearchDirection {
-    Forward,
-    Backward,
+// editing:
+//  true = editing mode
+// false = viewing mode
+pub struct Editor {
+    terminal: Terminal,
+    document: Document,
+    position: Position,
+    message: Message,
+    should_quit: bool,
+    editing: bool,
+    quit_times: u8,
 }
 
-#[derive(Default, Clone)]
-pub struct CursorPosition {
-    pub cursor_x: usize,
-    pub cursor_y: usize,
+// describes the cursor's position within the 
+// document, not it's position within the terminal
+#[derive(Default)]
+pub struct Position {
+    pub x: usize,
+    pub y: usize,
 }
 
-struct StatusMessage {
+struct Message {
     text: String,
     time: Instant,
 }
 
-impl StatusMessage {
+impl Message {
     fn from(message: String) -> Self {
         Self {
             text: message,
@@ -47,421 +60,467 @@ impl StatusMessage {
     }
 }
 
-pub struct Editor {
-    should_quit: bool,
-    terminal: Terminal,
-    cursor_position: CursorPosition,
-    offset: CursorPosition,
-    document: Document,
-    status_message: StatusMessage,
-    quit_times: u8,
+enum ScrollDirection {
+    Up,
+    Down,
 }
 
 impl Editor {
-    pub fn run(&mut self) {
-        Terminal::cursor_style(); // this could be a setting at some point
-        self.cursor_to_end();
-        loop {
-            if let Err(error_msg) = self.refresh_screen() {
-                die(&error_msg);
-            }
-            if self.should_quit {
-                break;
-            }
-            if let Err(error_msg) = self.process_keypress() {
-                die(&error_msg);
-            }
-        }
-    }
+    pub fn default(file_name: &str) -> Self {
+        let file = Path::new(file_name);
+        let initial_message = String::from(
+            "help: press ctrl+h at any time for keybinds"
+        );
+        let mut document;
 
-    pub fn default() -> Self {
-        let args: Vec<String> = env::args().collect();
-        let mut initial_status = 
-            String::from("help: ctrl-f to find | ctrl-s to save | ctrl-q to quit");
-        let document = if let Some(file_name) = args.get(1) {
-            let doc = Document::open(file_name);
-
-            if let Ok(doc) = doc {
-                doc
-            } else {
-                initial_status = format!("err: could not open file: {file_name}");
-                Document::default()
-            }
+        if file.exists() {
+            document = Document::open(file_name);
+            Document::wrap_file(&mut document);
+            Document::wrap_buffer(&mut document);
         } else {
-            Document::default()
-        };
-
-        Self { 
-            should_quit: false,
+            document = Document::create(file_name);
+        }
+        
+        Self {
             terminal: Terminal::default(),
-            cursor_position: CursorPosition::default(),
             document,
-            offset: CursorPosition::default(),
-            status_message: StatusMessage::from(initial_status),
+            position: Position::default(),
+            message: Message::from(initial_message),
+            should_quit: false,
+            editing: false,
             quit_times: QUIT_TIMES,
         }
     }
 
-    fn refresh_screen(&mut self) -> Result<(), std::io::Error> {
-        Terminal::cursor_hide();
-        Terminal::cursor_position(&CursorPosition::default());
-        if self.should_quit {
-            Terminal::quit();
-        } else {
-            self.draw_rows();
-            self.draw_status_bar();
-            self.draw_message_bar();
-            Terminal::cursor_position(&CursorPosition {
-                cursor_x: self.cursor_position.cursor_x.saturating_sub(self.offset.cursor_x),
-                cursor_y: self.cursor_position.cursor_y.saturating_sub(self.offset.cursor_y),
-            });
+    pub fn run(&mut self) {
+        if let Err(error_msg) = Terminal::init() {
+            die(error_msg);
+        };
+        loop {
+            if let Err(error_msg) = self.refresh_screen() {
+                die(error_msg);
+            };
+            if self.should_quit {
+                if let Err(error_msg) = Terminal::quit() {
+                    die(error_msg);
+                };
+                break;
+            };
+            self.process_event();
+        };
+    }
+
+    pub fn save(&mut self, words: bool) {
+        if !words {
+            if let Ok(()) = self.document.save(words) {
+                self.message = 
+                Message::from("file saved successfully".to_string());
+            } else {
+                self.message =
+                Message::from("error writing file".to_string());
+            }
+        } else if self.document.save(words).is_err() {
+            self.message =
+            Message::from("error writing file".to_string());
         }
-        Terminal::cursor_show();
-        Terminal::flush()
     }
 
-    pub fn cursor_to_end(&mut self) {
-        let end_y = self.document.len().saturating_sub(1);
-        let end_x = if let Some(row) = self.document.row(end_y) {
-            row.len()
-        } else {
-            0
-        };
+    pub fn process_event(&mut self) {
+        let event = read();
 
+        match event {
+            Ok(Event::Key(key)) => if OS == "windows" {
+                self.windows_keypress(key);
+            } else {
+                self.process_keypress(key);
+            },
+            Ok(Event::Resize(first_x, first_y)) => self.term_resize(first_x as usize, first_y as usize),
+            Err(error_msg) => die(error_msg),
+            _ => (),
+        }
+    }
+
+    pub fn term_resize(&mut self, first_x: usize, first_y: usize) {
+        let (mut final_x, mut final_y) = (first_x, first_y);
         
-        self.cursor_position = CursorPosition {
-            cursor_x: end_x,
-            cursor_y: end_y,
-        };
-        self.scroll();
+        if let Err(error_msg) = self.terminal.cursor_hide_now() {
+            die(error_msg);
+        }
+        if let Err(error_msg) = self.terminal.clear_all() {
+            die(error_msg);
+        }
+        loop {
+            let poll_duration = Duration::from_millis(100);
+
+            match poll(poll_duration) {
+                Ok(true) => match read() {
+                    Ok(Event::Resize(new_x, new_y )) => {
+                        final_x = new_x as usize;
+                        final_y = new_y as usize;
+                    },
+                    Err(error_msg) => die(error_msg),
+                    _ => (),
+                },
+                Ok(false) => break,
+                Err(error_msg) => die(error_msg),
+            };
+
+        }
+        if final_x != self.terminal.width {
+            self.document.wrap_file();
+            self.document.wrap_buffer();
+        }
+
+        self.terminal.width = final_x;
+        self.terminal.height = final_y.saturating_sub(2);
+        self.snap_view();
     }
 
-    fn draw_status_bar(&self) {
-        let mut status_msg;
-        let term_width = self.terminal.size().width as usize;
-        let dirty_indicator = if self.document.is_dirty() {
+    fn process_keypress(&mut self, key: KeyEvent) {
+        let term_height = self.terminal.height;
+
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
+                if self.quit_times > 0 && self.document.append_buffer.is_dirty() {
+                    self.message = 
+                    Message::from(format!(
+                        "file has unsaved changes. press ctrl-q {} more times to quit anyway.",
+                        self.quit_times,
+                    ));
+                    
+                    self.quit_times -= 1;
+
+                    return
+                };
+                self.should_quit = true;
+            },
+            (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(false),
+            (KeyModifiers::CONTROL, KeyCode::Char('h')) => {
+                self.message = 
+                Message::from("ctrl+e to toggle mode, ctrl+s to save, ctrl+q to quit.".to_string());
+            },
+            // editing mode
+            (KeyModifiers::CONTROL, KeyCode::Char('e')) if self.editing => {
+                self.editing = false;
+                self.message = 
+                Message::from("arrow keys and pgup/down to navigate.".to_string());
+                self.snap_view();
+            },
+            (_, KeyCode::Char(pressed_char)) if self.editing => {
+                self.document.append_buffer.count_words();
+                if self.document.append_buffer.word_count > 6 {
+                    self.save(true);
+                } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                self.document.insert(pressed_char);
+                self.snap_view();
+                self.document.last_edit = Instant::now();
+            },
+            (_, KeyCode::Backspace) if self.editing => {
+                // skip checking word count if backspacing
+                if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                if self.position.x > 0 
+                || self.position.y > 0 {
+                    self.document.delete();
+                    self.snap_view();
+                };
+                self.document.last_edit = Instant::now();
+            },
+            (_, KeyCode::Enter) if self.editing => {
+                self.document.append_buffer.count_words();
+                if self.document.append_buffer.word_count > 6 {
+                    self.save(true);
+                } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                self.document.insert('\n');
+                self.snap_view();
+                self.document.last_edit = Instant::now();
+            },
+            // viewing mode
+            (KeyModifiers::CONTROL, KeyCode::Char('e')) if !self.editing => {
+                self.editing = true;
+                self.snap_view();
+            },
+            (_, KeyCode::Up) if !self.editing => self.viewing_scroll(&ScrollDirection::Up, 1),
+            (_, KeyCode::Down) if !self.editing => self.viewing_scroll(&ScrollDirection::Down, 1),
+            (_, KeyCode::PageUp) if !self.editing => self.viewing_scroll(&ScrollDirection::Up, term_height),
+            (_, KeyCode::PageDown) if !self.editing => self.viewing_scroll(&ScrollDirection::Down, term_height),
+            _ => (),
+        };
+
+        // if user presses anything but ctrl+q again, abort quitting by resetting
+        // self.quit_times and message
+        if self.quit_times < QUIT_TIMES {
+            self.quit_times = QUIT_TIMES;
+            self.message = Message::from(String::new());
+        };
+    }
+
+    // snap view so end of file is at the middle of the screen
+    // if in editing mode, also snap cursor to end of line
+    fn snap_view(&mut self) {
+        let term_height = self.terminal.height;
+        let max_height = self.document.display_rows.len();
+        let last_display_index = self.document.display_rows.len().saturating_sub(1);
+
+        if self.editing {
+            self.position.y = last_display_index;
+            if let Some(last_drow) = self.document.get_display_row(last_display_index) {
+                self.position.x = last_drow.len;
+            } else {
+                self.position.x = 0;
+            }
+        } else if self.position.y > max_height.saturating_sub((term_height / 2).saturating_add(1)) {
+            self.position.y = max_height.saturating_sub((term_height / 2).saturating_add(1));
+        };
+    }
+
+    fn viewing_scroll(&mut self, direction: &ScrollDirection, amount: usize) {
+        let max_height = self.document.display_rows.len().saturating_sub(1);
+        let term_height = self.terminal.height;
+        let mut position = &mut self.position;
+
+        match direction {
+            ScrollDirection::Up => position.y = position.y.saturating_sub(amount),
+            ScrollDirection::Down => position.y = position.y.saturating_add(amount),
+        };
+
+        // stop view from scrolling too far past the end of the file
+        if position.y > max_height.saturating_sub((term_height / 2).saturating_add(1)) {
+            position.y = max_height.saturating_sub((term_height / 2).saturating_add(1));
+        };
+    }
+
+    pub fn draw_rows(&mut self) -> Result<(), Error> {
+        let term_height = self.terminal.height;
+        let editing_offset = self.terminal.height / 2;
+
+        // BAD?: lot of nested ifs here, maybe i can clean this up.
+        for term_row in 0..term_height {
+            // draw rows in edit mode
+            if self.editing {
+                // if ((y offset + current term row) - editing offset) does not overflow (read:
+                // would not become less than zero), check if that row exists in file and print it.
+                // otherwise check if that row exists in append buffer and print it. otherwise print ~
+                if let Some(index_to_display) = self.position.y.saturating_add(term_row).checked_sub(editing_offset) {
+                    if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
+                        // if we're rendering a row from the append buffer, check if it's the 
+                        // joining row from the rest of the file. if so, split it and render
+                        // the parts separately so we can invert the colours on the buffer only
+                        if row_to_render.is_buffer {
+                            if let Some((rendered_row, rendered_buffer)) = self.document.render_buffer(row_to_render) {
+                                self.terminal.queue_print(&rendered_row)?;
+                                self.terminal.reverse_colors()?;
+                                self.terminal.queue_print(&rendered_buffer)?;
+                                self.terminal.no_reverse_colors()?;
+                            } else {
+                                self.terminal.reverse_colors()?;
+                                if row_to_render.content.is_empty() {
+                                    self.terminal.queue_print(" ")?;
+                                } else {
+                                    self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
+                                }
+                                self.terminal.no_reverse_colors()?;
+                            };
+                        } else {
+                            self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
+                        } 
+                    } else {
+                        self.terminal.queue_print("~")?;
+                    }
+                } else {
+                    self.terminal.queue_print("~")?;
+                }
+            // draw rows in view mode
+            } else {
+                let index_to_display = self.position.y.saturating_add(term_row);
+
+                if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
+                    self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
+                } else {
+                    self.terminal.queue_print("~")?;
+                }
+            }
+            self.terminal.clear_line()?;
+            self.terminal.new_line()?;
+        }
+        Ok(())
+    }
+
+    fn draw_status_bar(&mut self) -> Result<(), Error>{
+        let mut status;
+        let term_width = self.terminal.width;
+        let mut file_name = self.document.file_name.clone();
+        let word_count = self.document.word_count;
+        let char_count = self.document.char_count;
+        let dirty_indicator = if self.document.append_buffer.is_dirty() {
             "(*)"
         } else {
             ""
         };
-        let mut file_name = "[no name]".to_owned();
+        let mode = if self.editing {
+            "EDITING"
+        } else {
+            "VIEWING"
+        };
+        file_name.truncate(20);
 
-        if let Some(name) = &self.document.file_name {
-            file_name = name.clone();
-            file_name.truncate(20);
-        }
-
-        status_msg = format!(
-            "{} - {} lines {}", 
+        status = format!(
+            " {} - {} lines {} {}", 
             file_name, 
-            self.document.len(),
-            dirty_indicator
+            self.document.file_rows.len(),
+            dirty_indicator,
+            mode,
         );
 
         let line_indicator = format!(
-            "{} / {}",
-            self.cursor_position.cursor_y.saturating_add(1),
-            self.document.len()
+            "{word_count} words / {char_count} chars "
         );
-
-        let status_len = status_msg.len().saturating_add(line_indicator.len());
-
-        status_msg.push_str(&" ".repeat(term_width.saturating_sub(status_len)));
-        status_msg = format!("{status_msg}{line_indicator}");
-        status_msg.truncate(term_width);
-
-        Terminal::set_colors(Colors::new(
-            STATUS_FG_COLOR,
-            STATUS_BG_COLOR
-        ));
-        println!("{status_msg}\r");
-        Terminal::reset_colors();
-    }
-
-    fn draw_message_bar(&self) {
-        Terminal::clear_current_line();
-        let message = &self.status_message;
+        let status_len = status.len() + line_indicator.len();
+        let padding = " ".repeat(term_width - status_len);
         
-        if message.time.elapsed() < Duration::new(5, 0) {
-            let mut text = message.text.clone();
-            text.truncate(self.terminal.size().width as usize);
-            print!("{text}");
+        if term_width > status_len {
+            status.push_str(&padding);
         }
-    }
-
-    fn save (&mut self) {
-        if self.document.file_name.is_none() {
-            // fix error handling here
-            let new_name = self.prompt(
-                "save as: ", |_, _, _| {}).unwrap_or(None);
-            if new_name.is_none() {
-                self.status_message = StatusMessage::from("save aborted".to_owned());
-                return;
-            };
-            self.document.file_name = new_name;
-        }
-        if self.document.save().is_ok() {
-            self.status_message = 
-                StatusMessage::from("file saved successfully".to_owned());
-        } else {
-            self.status_message =
-                StatusMessage::from("error writing file".to_owned());
-        }
-    }
-
-    fn search(&mut self) {
-        let old_position = self.cursor_position.clone();
-        let mut direction = SearchDirection::Forward;
-        // todo: i hate this code block and i'd really like to refactor it to
-        // something actually readable at some point
-        let query = self.prompt(
-            "search (esc to cancel, arrows to navigate): ",
-            |editor, key, query| {
-                let mut moved = false;
-                
-                match key.code {
-                    KeyCode::Right 
-                    | KeyCode::Down => {
-                        direction = SearchDirection::Forward;
-                        editor.move_cursor(KeyCode::Right);
-                        moved = true;
-                    },
-                    KeyCode::Left
-                    | KeyCode::Up => direction = SearchDirection::Backward,
-                    _ => direction = SearchDirection::Forward,
-                };
-                if let Some(position) = 
-                editor.document.find(query, &editor.cursor_position, direction) {
-                    editor.cursor_position = position;
-                    editor.scroll();
-                } else if moved {
-                    editor.move_cursor(KeyCode::Left);
-                };
-            },
-        ).unwrap_or(None); 
-
-        if query.is_none() {
-            self.cursor_position = old_position;
-            self.scroll();
-        }
-    }
-
-    fn process_keypress(&mut self) -> Result<(), std::io::Error> {
-        let event = Terminal::read_event(&mut self.terminal)?;
-
-        if let Event::Key(pressed_key) = event {
-            match (pressed_key.modifiers, pressed_key.code) {
-                (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
-                    if self.quit_times > 0 && self.document.is_dirty() {
-                        self.status_message = StatusMessage::from(format!(
-                            "file has unsaved changes. press ctrl-q {} more times to quit anyway.",
-                            self.quit_times
-                        ));
-                        self.quit_times -= 1;
-                        return Ok(());
-                    }
-                    self.should_quit = true;
-                },
-                (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(),
-                (KeyModifiers::CONTROL, KeyCode::Char('f')) => self.search(),
-                (_, KeyCode::Char(character)) => {
-                    self.document.insert(&self.cursor_position, character);
-                    self.move_cursor(KeyCode::Right);
-                },
-                (_, KeyCode::Delete) => self.document.delete(&self.cursor_position),
-                (_, KeyCode::Backspace) => {
-                    if self.cursor_position.cursor_x > 0 || self.cursor_position.cursor_y > 0 {
-                        self.move_cursor(KeyCode::Left);
-                        self.document.delete(&self.cursor_position);
-                    }
-                },
-                (_, KeyCode::Enter) => {
-                    self.document.insert(&self.cursor_position, '\n');
-                    self.move_cursor(KeyCode::Right);
-                }
-                (_, KeyCode::Up
-                | KeyCode::Down
-                | KeyCode::Left
-                | KeyCode::Right
-                | KeyCode::PageUp
-                | KeyCode::PageDown
-                | KeyCode::End
-                | KeyCode::Home) => self.move_cursor(pressed_key.code), 
-                _ => (),
-            }
-        } 
-        self.scroll();
-        if self.quit_times < QUIT_TIMES {
-            self.quit_times = QUIT_TIMES;
-            self.status_message = StatusMessage::from(String::new());
-        }
-        // fix error handling here
+        status = format!("{status}{line_indicator}");
+        status.truncate(term_width);
+        self.terminal.reverse_colors()?;
+        self.terminal.queue_print(&status)?;
+        self.terminal.no_reverse_colors()?;
+        self.terminal.new_line()?;
         Ok(())
     }
 
-    fn scroll(&mut self) {
-        let CursorPosition { cursor_x, cursor_y } = self.cursor_position;
-        let terminal_width = self.terminal.size().width as usize;
-        let terminal_height = self.terminal.size().height as usize;
-        let mut offset = &mut self.offset;
+    fn draw_message_bar(&mut self) -> Result<(), Error> {
+        self.terminal.clear_line()?;
 
-        if cursor_y < offset.cursor_y {
-            offset.cursor_y = cursor_y;
-        } else if cursor_y >= offset.cursor_y.saturating_add(terminal_height) {
-            offset.cursor_y = cursor_y.saturating_sub(terminal_height).saturating_add(1);
+        let message = &self.message;
+
+        if message.time.elapsed() < Duration::new(5, 0) {
+            let mut text = message.text.clone();
+
+            text.truncate(self.terminal.width);
+            self.terminal.queue_print(&text)?;
         }
-        if cursor_x < offset.cursor_x {
-            offset.cursor_x = cursor_x;
-        } else if cursor_x >= offset.cursor_x.saturating_add(terminal_width) {
-            offset.cursor_x = cursor_x.saturating_sub(terminal_width).saturating_add(1);
-        }
+        Ok(())
     }
 
-    fn move_cursor(&mut self, direction: KeyCode) {
-        let terminal_height = self.terminal.size().height as usize;
-        let CursorPosition { mut cursor_x, mut cursor_y } = self.cursor_position;
-        let max_height = self.document.len();
-        let mut max_width = if let Some(row) = self.document.row(cursor_y) {
-            row.len()
-        } else {
-            0
+    pub fn refresh_screen(&mut self) -> Result<(), Error> {
+        self.terminal.cursor_hide()?;
+        self.terminal.move_cursor(&Position::default())?;
+        self.draw_rows()?;
+        self.draw_status_bar()?;
+        self.draw_message_bar()?;
+        if self.editing {
+            self.terminal.move_cursor(&Position {
+                x: self.position.x,
+                y: self.terminal.height / 2,
+            })?;
+            self.terminal.cursor_show()?;
         };
-        
-        match direction {
-            KeyCode::Up => cursor_y = cursor_y.saturating_sub(1),
-            KeyCode::Down => {
-                if cursor_y < max_height {
-                    cursor_y = cursor_y.saturating_add(1);
-                }
-            },
-            KeyCode::Left => {
-                if cursor_x > 0 {
-                    cursor_x -= 1;
-                } else if cursor_y > 0 {
-                    cursor_y -= 1;
-                    if let Some(row) = self.document.row(cursor_y) {
-                        cursor_x = row.len();
-                    } else {
-                        cursor_x = 0;
-                    }
-                }
-            },
-            KeyCode::Right => {
-                if cursor_x < max_width {
-                    cursor_x += 1;
-                } else if cursor_y < max_height {
-                    cursor_y += 1;
-                    cursor_x = 0;
-                }
-            },
-            KeyCode::PageUp => {
-                cursor_y = if cursor_y > terminal_height {
-                    cursor_y.saturating_sub(terminal_height)
-                } else {
-                    0
-                }
-            },
-            KeyCode::PageDown => {
-                cursor_y = if cursor_y < terminal_height {
-                    cursor_y.saturating_add(terminal_height)
-                } else {
-                    max_height
-                }
-            },
-            KeyCode::Home => cursor_x = 0,
-            KeyCode::End => cursor_x = max_width,
-            _ => (),
-        }
-
-        max_width = if let Some(row) = self.document.row(cursor_y) {
-            row.len()
-        } else {
-            0
-        };
-
-        if cursor_x > max_width {
-            cursor_x = max_width;
-        }
-
-        self.cursor_position = CursorPosition { cursor_x, cursor_y }
+        self.terminal.flush()?;
+        Ok(())
     }
 
-    fn draw_welcome_message(&self) {
-        let mut welcome_message = format!(" brr -- {VERSION} \r");
-        let width = self.terminal.size().width as usize;
-        let welcome_msg_length = welcome_message.len();
-        let padding = width.saturating_sub(welcome_msg_length) / 2;
-        let spaces = " ".repeat(padding.saturating_sub(1));
-        welcome_message = format!("~{spaces}{welcome_message}");
-        welcome_message.truncate(width);
-        println!("{welcome_message}\r");
-    }
-    
-    pub fn draw_row(&self, row: &Row) {
-        let width = self.terminal.size().width as usize;
-        let start = self.offset.cursor_x;
-        let end = self.offset.cursor_x.saturating_add(width);
-        let row = row.render(start, end);
-
-        println!("{row}\r");
-    }
-
-    fn draw_rows(&self) {
-        let height = self.terminal.size().height;
-        
-        for terminal_row in 0..height {
-            Terminal::clear_current_line();
-            if let Some(row) = self
-                .document
-                .row(self.offset.cursor_y.saturating_add(terminal_row as usize)) 
-            {
-                self.draw_row(row);
-            } else if self.document.is_empty() && terminal_row == height / 3 {
-                self.draw_welcome_message();
-            } else {
-                println!("~\r");
-            }
-        }
-    }
-
-    // this whole closures and callbacks thing is a bit beyond me
-    // so for now i'm just going to hope nothing breaks here
+    // BAD: i had to duplicate process keypress here because of a known issue
+    // for windows terminals with crossterm. if i implemented this directly above,
+    // it breaks the quit_times logic. i hate this solution but its good enough for
+    // now.
     // too bad!
-    fn prompt<C>(&mut self, prompt: &str, mut callback: C) -> Result<Option<String>, std::io::Error> 
-    where
-        C: FnMut(&mut Self, KeyEvent, &String),
-    {
-        let mut user_input = String::new();
+    // check these for updates:
+    // https://github.com/crossterm-rs/crossterm/issues/797
+    // https://github.com/crossterm-rs/crossterm/issues/752
+    // https://github.com/crossterm-rs/crossterm/pull/778
+    fn windows_keypress(&mut self, key: KeyEvent) {
+        let term_height = self.terminal.height;
 
-        loop {
-            self.status_message = StatusMessage::from(format!("{prompt}{user_input}"));
-            self.refresh_screen()?;
-            let event = read().unwrap(); // handle this and ideally use fn already in Terminal.rs
+        match (key.kind, key.modifiers, key.code) {
+            (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('q')) => {
+                if self.quit_times > 0 && self.document.append_buffer.is_dirty() {
+                    self.message = 
+                    Message::from(format!(
+                        "file has unsaved changes. press ctrl-q {} more times to quit anyway.",
+                        self.quit_times,
+                    ));
+                    
+                    self.quit_times -= 1;
 
-            if let Event::Key(key) = event {
-                match key.code {
-                    KeyCode::Backspace => user_input.truncate(user_input.len().saturating_sub(1)),
-                    KeyCode::Enter => break,
-                    KeyCode::Char(character) => {
-                        if !character.is_control() {
-                            user_input.push(character);
-                        }
-                    },
-                    KeyCode::Esc => {
-                        user_input.truncate(0);
-                        break;
-                    },
-                    _ => (),
+                    return
                 };
-                callback(self, key, &user_input);
-            }
-        }
-        self.status_message = StatusMessage::from(String::new());
-        
-        if user_input.is_empty() {
-            return Ok(None);
-        }
-        // fix error handling here
-        Ok(Some(user_input))
+                self.should_quit = true;
+            },
+            (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(false),
+            (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('h')) => {
+                self.message = 
+                Message::from("ctrl+e to toggle mode, ctrl+s to save, ctrl+q to quit.".to_string());
+            },
+            // editing mode
+            (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('e')) if self.editing => {
+                self.message = 
+                Message::from("arrow keys and pgup/down to navigate.".to_string());
+                self.editing = false;
+                self.snap_view();
+            },
+            (KeyEventKind::Press, _, KeyCode::Char(pressed_char)) if self.editing => {
+                self.document.append_buffer.count_words();
+                if self.document.append_buffer.word_count > 6 {
+                    self.save(true);
+                } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                self.document.insert(pressed_char);
+                self.snap_view();
+                self.document.last_edit = Instant::now();
+            },
+            (KeyEventKind::Press, _, KeyCode::Backspace) if self.editing => {
+                // skip checking word count if backspacing
+                if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                if self.position.x > 0 
+                || self.position.y > 0 {
+                    self.document.delete();
+                    self.snap_view();
+                };
+                self.document.last_edit = Instant::now();
+            },
+            (KeyEventKind::Press, _, KeyCode::Enter) if self.editing => {
+                self.document.append_buffer.count_words();
+                if self.document.append_buffer.word_count > 6 {
+                    self.save(true);
+                } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                && !self.document.append_buffer.buffer.is_empty() {
+                    self.save(false);
+                    // self.message = Message::from("buffer saved".to_string());
+                }
+                self.document.insert('\n');
+                self.snap_view();
+                self.document.last_edit = Instant::now();
+            },
+            // viewing mode
+            (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('e')) if !self.editing => {
+                self.editing = true;
+                self.snap_view();
+            },
+            (KeyEventKind::Press, _, KeyCode::Up) if !self.editing => self.viewing_scroll(&ScrollDirection::Up, 1),
+            (KeyEventKind::Press, _, KeyCode::Down) if !self.editing => self.viewing_scroll(&ScrollDirection::Down, 1),
+            (KeyEventKind::Press, _, KeyCode::PageUp) if !self.editing => self.viewing_scroll(&ScrollDirection::Up, term_height),
+            (KeyEventKind::Press, _, KeyCode::PageDown) if !self.editing => self.viewing_scroll(&ScrollDirection::Down, term_height),
+            _ => (),
+        };
     }
 }
