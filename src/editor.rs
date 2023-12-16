@@ -288,7 +288,7 @@ impl Editor {
     fn viewing_scroll(&mut self, direction: &ScrollDirection, amount: usize) {
         let max_height = self.document.display_rows.len().saturating_sub(1);
         let term_height = self.terminal.height;
-        let mut position = &mut self.position;
+        let position = &mut self.position;
 
         match direction {
             ScrollDirection::Up => position.y = position.y.saturating_sub(amount),
