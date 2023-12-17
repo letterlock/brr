@@ -36,7 +36,7 @@ pub struct Welcome {
 enum Extension {
     Md,
     Txt,
-    Idk,
+    Other,
 }
 
 impl Welcome {
@@ -69,7 +69,10 @@ impl Welcome {
                                     break;
                                 },
                                 // BAD: fix this ugliness
-                                Ok(Extension::Idk) => (),
+                                Ok(Extension::Other) => {
+                                    file_name.push_str(input);
+                                    break;
+                                },
                                 Err(error_msg) => die(error_msg),
                             };
                         }
@@ -112,7 +115,7 @@ impl Welcome {
                 return Ok(Extension::Txt);
             };
         };
-        Ok(Extension::Idk)
+        Ok(Extension::Other)
     }
 }
 

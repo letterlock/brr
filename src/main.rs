@@ -67,8 +67,15 @@ use std::env::current_dir;
 
 // BUG: backspace seems to trigger timed save
 
+// possible config options:
+// - don't check for files with .md/.txt when opening
+// - quit times
+// - start mode
+// - 
+
 // TODO:
-//   - !!! way to open new file from within the program
+//   - !!! refactor welcome code so that i can reuse it in editor::open()
+//   - !!! fix status bar and message bar so i like them more
 //   - !!! config file
 //   - !!! finish -h output
 //   - !!! overuse of self. ?
