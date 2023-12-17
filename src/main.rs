@@ -14,10 +14,11 @@
 mod die;
 mod terminal;
 mod editor;
+mod file;
 mod document;
 mod append_buffer;
 mod row;
-mod welcome;
+mod init;
 
 use die::die;
 use terminal::Terminal;
@@ -25,15 +26,14 @@ use editor::{
     Editor,
     Position
 };
+use file::File;
 use document::Document;
 use append_buffer::AppendBuffer;
 use row::{
     FileRow,
     DisplayRow,
 };
-use welcome::Welcome;
-
-use std::env::current_dir;
+use init::Init;
 
 // note on converting usize to u16:
 // in reality usize is unneccesary for brr because a document is
@@ -65,8 +65,6 @@ use std::env::current_dir;
 // also brr doesn't currently count words or characters in
 // the append buffer
 
-// BUG: backspace seems to trigger timed save
-
 // possible config options:
 // - don't check for files with .md/.txt when opening
 // - quit times
@@ -74,7 +72,8 @@ use std::env::current_dir;
 // - 
 
 // TODO:
-//   - !!! refactor welcome code so that i can reuse it in editor::open()
+//   - !!! test brr with absolute file paths
+//   - !!! optimise document.rs
 //   - !!! fix status bar and message bar so i like them more
 //   - !!! config file
 //   - !!! finish -h output
@@ -94,8 +93,7 @@ use std::env::current_dir;
 //   -   ! handle wide characters
 
 fn main() {
-    match current_dir() {
-        Err(error_msg) => die(error_msg),
-        Ok(current_dir) => Welcome::default().welcome(current_dir),
-    };
+    let args = std::env::args().nth(1);
+
+    Init::default().welcome(args);
 }

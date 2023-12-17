@@ -1,11 +1,11 @@
 use crate::die;
 use crate::Terminal;
 use crate::Document;
+use crate::File;
 use crate::row::DisplayRow;
 
 use {
     std::{
-        path::Path,
         io::Error,
         time::{
             Duration,
@@ -77,17 +77,16 @@ impl Message {
 }
 
 impl Editor {
-    pub fn default(file_name: &str) -> Self {
-        let file = Path::new(file_name);
+    pub fn default(file: File) -> Self {
         let initial_message = String::from(STANDARD_MESSAGE);
         let mut document;
 
-        if file.exists() {
-            document = Document::open(file_name);
+        if file.exists {
+            document = Document::open(file);
             Document::wrap_file(&mut document);
             Document::wrap_buffer(&mut document);
         } else {
-            document = Document::create(file_name);
+            document = Document::create(file);
         }
         
         Self {
@@ -230,7 +229,6 @@ impl Editor {
                     } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -241,7 +239,7 @@ impl Editor {
                     if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
+                        self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
                     }
                     if self.view_pos.x > 0 
                     || self.view_pos.y > 0 {
@@ -257,7 +255,6 @@ impl Editor {
                     } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -333,7 +330,6 @@ impl Editor {
                     } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -344,7 +340,7 @@ impl Editor {
                     if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
+                        self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
                     }
                     if self.view_pos.x > 0 
                     || self.view_pos.y > 0 {
@@ -360,7 +356,6 @@ impl Editor {
                     } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
                         self.save(false);
-                        // self.message = Message::from("buffer saved".to_string());
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -480,7 +475,7 @@ impl Editor {
         let item_width = self.terminal.width / 3;
         let word_count = self.document.word_count;
         let char_count = self.document.char_count;
-        let mut file_name = self.document.file_name.clone();
+        let mut file_name = self.document.file.name.clone();
         let dirty_indicator = if self.document.append_buffer.is_dirty() {
             "(*)"
         } else {
@@ -543,20 +538,20 @@ impl Editor {
     pub fn open(&mut self) {
         let prev_mode = self.mode.clone();
         self.mode = Mode::Prompt;
-        let open_input = self.prompt(
+        let input = self.prompt(
             "file name: ", 11, |_, _, _| {}
         ).unwrap_or(None);
         
-        if let Some(file_name) = open_input {
-            let file = Path::new(&file_name);
+        if let Some(file_name) = input {
+            let file_info = File::get_file_info(&file_name);
             let mut document;
 
-            if file.exists() {
-                document = Document::open(&file_name);
+            if file_info.exists {
+                document = Document::open(file_info);
                 Document::wrap_file(&mut document);
                 Document::wrap_buffer(&mut document);
             } else {
-                document = Document::create(&file_name);
+                document = Document::create(file_info);
             }
 
             self.document = document;

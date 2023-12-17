@@ -1,17 +1,15 @@
+// use crate::die;
+use crate::Terminal;
+use crate::File;
 use crate::FileRow;
 use crate::DisplayRow;
-use crate::Terminal;
 use crate::AppendBuffer;
-use crate::die;
 
 use unicode_segmentation::UnicodeSegmentation;
 // use words_count::WordsCount;
 use std::{
     time::Instant,
-    fs::{
-        read_to_string,
-        File,
-    },
+    // path::Path,
     io::{
         Error,
         Write,
@@ -20,7 +18,7 @@ use std::{
 
 // #[derive(Default)]
 pub struct Document {
-    pub file_name: String,
+    pub file: File,
     pub file_rows: Vec<FileRow>,
     pub display_rows: Vec<DisplayRow>,
     pub append_buffer: AppendBuffer,
@@ -30,11 +28,11 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn create(file_name: &str) -> Self {
+    pub fn create(file: File) -> Self {
         let file_rows = vec![FileRow::default()];
 
         Self { 
-            file_name: file_name.to_string(),
+            file,
             file_rows,
             display_rows: Vec::new(),
             append_buffer: AppendBuffer::default(),
@@ -44,33 +42,22 @@ impl Document {
         }
     }
 
-    pub fn open(file_name: &str) -> Self {
-        let file = read_to_string(file_name);
+    pub fn open(file: File) -> Self {
+        let file = file;
         let mut file_rows = Vec::new();
         let mut word_count = 0;
         let mut char_count = 0;
+
         
-        match file {
-            Ok(content) => {
-                let counts = words_count::count(&content);
-                        // .replace(&['\n', '\r'][..], " "));
-                word_count = counts.words;
-                char_count = counts.characters;
-                // word_count = content.count();
-                // char_count = content
-                //     .split(&['\n', '\r'][..])
-                //     .collect::<String>()
-                //     .graphemes(true)
-                //     .count();
-                for line in content.lines() {
-                    file_rows.push(FileRow::from(line));
-                }
-            },
-            Err(error_msg) => die(error_msg),
-        }
+        for line in file.as_string.lines() {
+            let counts = words_count::count(&file.as_string);
+            word_count = counts.words;
+            char_count = counts.characters;
+            file_rows.push(FileRow::from(line));
+        };
 
         Self { 
-            file_name: file_name.to_string(),
+            file,
             file_rows,
             display_rows: Vec::new(),
             append_buffer: AppendBuffer::default(),
@@ -84,7 +71,7 @@ impl Document {
         // BAD: brr should have some way to make sure your
         // file doesn't get screwed because of an error
         // on the program's side
-        let mut file = File::create(&self.file_name)?;
+        let mut save_file = std::fs::File::create(&self.file.name)?;
         let mut contents = String::new();
 
         for (index, row) in self.file_rows.iter().enumerate() {
@@ -113,7 +100,10 @@ impl Document {
         // put a newline at the end of the file for
         // unix compliance :^)
         contents.push('\n');
-        file.write_all(contents.as_bytes())?;
+        
+        self.file.as_string = contents.clone();
+
+        save_file.write_all(contents.as_bytes())?;
 
         self.last_edit = Instant::now();
         
@@ -124,28 +114,22 @@ impl Document {
     }
 
     pub fn sync_file_rows(&mut self) {
-        let file = read_to_string(self.file_name.clone());
         let mut file_rows = Vec::new();
         let mut word_count = 0;
         let mut char_count = 0;
 
-        match file {
-            Ok(content) => {
-                for line in content.lines() {
-                    let counts = words_count::count(&content);
-                        // .replace(&['\n', '\r'][..], " "));
-                    word_count = counts.words;
-                    char_count = counts.characters;
-                    // word_count = content.unicode_words().count();
-                    // char_count = content
-                    // .split(&['\n', '\r'][..])
-                    // .collect::<String>()
-                    // .graphemes(true)
-                    // .count();
-                    file_rows.push(FileRow::from(line));
-                }
-            },
-            Err(error_msg) => die(error_msg),
+        for line in self.file.as_string.lines() {
+            let counts = words_count::count(&self.file.as_string);
+            // .replace(&['\n', '\r'][..], " "));
+            word_count = counts.words;
+            char_count = counts.characters;
+            // word_count = content.unicode_words().count();
+            // char_count = content
+            // .split(&['\n', '\r'][..])
+            // .collect::<String>()
+            // .graphemes(true)
+            // .count();
+            file_rows.push(FileRow::from(line));
         }
 
         self.word_count = word_count;
@@ -162,7 +146,7 @@ impl Document {
         let max_width = Terminal::get_term_size().0;
         let mut total_len = 0;
         
-        for row in &self.file_rows {            
+        for row in &self.file_rows {
             // wrap display line if necessary
             if row.len >= max_width {
                 // split row into vector of substrings by word boundaries
