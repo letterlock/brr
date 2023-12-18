@@ -1,4 +1,4 @@
-use crate::{Position, die::die};
+use crate::{Position, die};
 
 use crossterm::{
     terminal::{
@@ -25,6 +25,7 @@ use crossterm::{
     ExecutableCommand, 
     QueueableCommand,
 };
+use log::error;
 use std::io::{
     Write,
     Stdout,
@@ -53,6 +54,7 @@ impl Terminal {
         match size() {
             Ok(size) => (size.0 as usize, size.1 as usize),
             Err(error_msg) => {
+                error!("[terminal.rs]: {error_msg} - could not get terminal size.");
                 die(error_msg);
                 (0, 0)
             },

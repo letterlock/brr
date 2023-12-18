@@ -79,16 +79,13 @@ use log::{LevelFilter, warn};
 // BUG: if brr saves as the text moves between lines, the entire last line will be highlighted as if editable
 
 // TODO:
-//   - !!! fix status bar and message bar so i like them more
-//   - !!! log errors to file instead of panic
-//   - !!! verify error handling works
 //   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html
 //   - !!! avoid overuse of .clone()
 //   - !!! check sizes (usize, u16) to avoid overflow
 //   - !!! overuse of self. ?
-//   - !!! check if len() is inefficient
 //   - !!! tidy up code
 //   - !!! finish -h output
+//   - !!! fix errors in editor.rs::refresh_screen()
 //   -  !! config file description
 //   -  !! add code comments for clarity
 //   -   ! don't wrap spaces along with words

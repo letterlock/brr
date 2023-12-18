@@ -1,3 +1,5 @@
+use log::error;
+
 use crate::die;
 use crate::Terminal;
 use crate::Document;
@@ -111,25 +113,37 @@ impl Editor {
 
     pub fn run(&mut self) {
         if let Err(error_msg) = Terminal::init() {
+            error!("[terminal.rs -> editor.rs]: {error_msg} - could not init terminal.");
             die(error_msg);
         };
+        // snap view to end of document.
+        if self.mode == Mode::View {
+            self.view_pos.y = self.document.display_rows.len().saturating_sub(1);
+        }
         self.snap_view();
+
         loop {
             if let Err(error_msg) = self.refresh_screen() {
+                error!("[editor.rs]: {error_msg} - could not refresh screen.");
                 die(error_msg);
             };
             if self.should_quit {
-                let written = self.document.written_this_session();
+                let total_prose = &self.document.count;
+                let session_prose = self.document.written_this_session();
                 let quit_msg = if self.config.count_on_quit {
                     format!(
-                        "goodbye!\r\napprox. written this session:\r\n  {} words\r\n  {} chars\r\n", 
-                        written.words, 
-                        written.chars,
+                        "goodbye!\r\napprox. total prose in {}:\r\n  {} words\r\n  {} chars\r\nwritten this session:\r\n  {} words\r\n  {} chars\r\n", 
+                        self.document.file.name,
+                        total_prose.words,
+                        total_prose.chars,
+                        session_prose.words, 
+                        session_prose.chars,
                     )
                 } else {
                     "goodbye!\r\n".to_string()
                 };
                 if let Err(error_msg) = Terminal::quit(quit_msg) {
+                    error!("[terminal.rs -> editor.rs]: {error_msg} - could not quit terminal.");
                     die(error_msg);
                 };
                 break;
@@ -138,6 +152,7 @@ impl Editor {
         };
     }
 
+    // BAD: errors could be handled better here.
     pub fn refresh_screen(&mut self) -> Result<(), Error> {
         self.terminal.cursor_hide()?;
         self.terminal.move_cursor(&Position::default())?;
@@ -165,7 +180,7 @@ impl Editor {
                 self.process_keypress(key);
             },
             Ok(Event::Resize(first_x, first_y)) => self.term_resize(first_x as usize, first_y as usize),
-            Err(error_msg) => die(error_msg),
+            Err(error_msg) => error!("[editor.rs::process_event()]: {error_msg} - could not read event."),
             _ => (),
         }
     }
@@ -174,10 +189,10 @@ impl Editor {
         let (mut final_x, mut final_y) = (first_x, first_y);
         
         if let Err(error_msg) = self.terminal.cursor_hide_now() {
-            die(error_msg);
+            error!("[editor.rs]: {error_msg} - could not hide cursor for terminal resize.");
         }
         if let Err(error_msg) = self.terminal.clear_all() {
-            die(error_msg);
+            error!("[editor.rs]: {error_msg} - could not clear terminal.");
         }
         loop {
             let poll_duration = Duration::from_millis(100);
@@ -188,11 +203,11 @@ impl Editor {
                         final_x = new_x as usize;
                         final_y = new_y as usize;
                     },
-                    Err(error_msg) => die(error_msg),
+                    Err(error_msg) => error!("[editor.rs::term_resize()]: {error_msg} - could not read event."),
                     _ => (),
                 },
                 Ok(false) => break,
-                Err(error_msg) => die(error_msg),
+                Err(error_msg) => error!("[editor.rs::term_resize()]: {error_msg} - could not poll."),
             };
 
         }
@@ -409,6 +424,10 @@ impl Editor {
             } else {
                 self.view_pos.x = 0;
             }
+        } else if self.mode == Mode::View {
+            if self.view_pos.y > max_height.saturating_sub((term_height / 2).saturating_add(1)) {
+                self.view_pos.y = max_height.saturating_sub((term_height / 2).saturating_add(1));
+            };
         } else if self.view_pos.y > max_height.saturating_sub((term_height / 2).saturating_add(1)) {
             self.view_pos.y = max_height.saturating_sub((term_height / 2).saturating_add(1));
         };
@@ -490,9 +509,8 @@ impl Editor {
     fn draw_status_bar(&mut self) -> Result<(), Error>{
         // BAD: dividing this by three leads to the formatting getting screwed up
         // when the width isn't evenly divisible by three
-        let item_width = self.terminal.width / 3;
-        let words = self.document.count.words;
-        let chars = self.document.count.chars;
+        // let words = self.document.count.words;
+        // let chars = self.document.count.chars;
         let mut file_name = self.document.file.name.clone();
         let dirty_indicator = if self.document.append_buffer.is_dirty() {
             "(*)"
@@ -504,17 +522,19 @@ impl Editor {
             Mode::Prompt => "",
             Mode::View => "VIEWING",
         };
-        let count_indicator = format!(
-            "{words} words / {chars} chars"
-        );
+        // let count_indicator = format!(
+        //     "{words} words / {chars} chars"
+        // );
 
         let file_indicator = format!("{file_name} {dirty_indicator}");
 
         // BAD?: give some indication if the file name has been truncated?
         file_name.truncate(20);
 
+        let max_width = self.terminal.width.saturating_sub(mode_indicator.len());
+
         let status_bar = format!(
-            "{file_indicator:<item_width$}{mode_indicator:^item_width$}{count_indicator:>item_width$}"
+            "{file_indicator:<max_width$}{mode_indicator}"
         );
 
         self.terminal.reverse_colors()?;
@@ -577,7 +597,15 @@ impl Editor {
             }
 
             self.document = document;
-            self.mode = Mode::Edit;
+            
+            if self.config.start_edit {
+                self.mode = Mode::Edit;
+            } else {
+                self.mode = Mode::View;
+                // make sure view snaps to end of document
+                self.view_pos.y = self.document.display_rows.len().saturating_sub(1);
+            }
+
             self.snap_view();
         } else {
             self.message = Message::from("open aborted".to_string());

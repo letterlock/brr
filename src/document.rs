@@ -1,4 +1,3 @@
-// use crate::die;
 use crate::Terminal;
 use crate::File;
 use crate::FileRow;
@@ -79,7 +78,7 @@ impl Document {
         // BAD: brr should have some way to make sure your
         // file doesn't get screwed because of an error
         // on the program's side
-        let mut save_file = std::fs::File::create(&self.file.name)?;
+        let mut save_file = std::fs::File::create(&self.file.path)?;
         let mut contents = String::new();
 
         for (index, row) in self.file_rows.iter().enumerate() {

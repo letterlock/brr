@@ -7,14 +7,15 @@ use crossterm::{terminal::{
     },
     ExecutableCommand,
 };
+use log::error;
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn die(error_msg: Error) {
     if let Err(error_msg) = disable_raw_mode() {
-        println!("could not disable raw mode: {error_msg}");
+        error!("[die.rs]: {error_msg} - could not disable raw mode");
     };
     if let Err(error_msg) = stdout().execute(LeaveAlternateScreen) {
-        println!("could not leave alternate screen: {error_msg}");
+        error!("[die.rs]: {error_msg} - could not leave alternate screen");
     };
     panic!("{error_msg}");
 }

@@ -1,7 +1,6 @@
 use crate::Editor;
 use crate::File;
 use crate::config::Config;
-// use crate::die;
 
 use std::io::stdin;
 
