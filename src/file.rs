@@ -31,7 +31,7 @@ pub enum Extension {
 // BAD: this doesn't behave intuitively if there is a both a
 // [file_name].md and [file_name].txt that match
 impl File {
-    pub fn get_file_info(user_input: &str) -> Self {
+    pub fn get_file_info(user_input: &str, search_ext: bool) -> Self {
         let mut current_directory = PathBuf::new();
         let mut name = String::new();
         let mut exists = false;
@@ -49,7 +49,8 @@ impl File {
 
             // if no extension, search the current directory for
             // a file matching name but with a .txt or .md extension
-            if extension == Extension::None {
+            if extension == Extension::None 
+            && search_ext {
                 let dir = read_dir(&current_directory).ok();
 
                 if let Some(dir_iter) = dir {

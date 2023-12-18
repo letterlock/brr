@@ -65,13 +65,13 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn quit() -> Result<(), Error> {
+    pub fn quit(quit_msg: String) -> Result<(), Error> {
         stdout().queue(Hide)?;
         stdout().queue(MoveTo(0, 0))?;
         stdout().queue(Clear(ClearType::All))?;
         stdout().queue(Show)?;
         stdout().queue(LeaveAlternateScreen)?;
-        stdout().queue(Print("goodbye\r\n"))?;
+        stdout().queue(Print(quit_msg))?;
         disable_raw_mode()?;
         stdout().flush()?;
         Ok(())

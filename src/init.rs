@@ -1,5 +1,6 @@
 use crate::Editor;
 use crate::File;
+use crate::config::Config;
 // use crate::die;
 
 use std::io::stdin;
@@ -25,10 +26,13 @@ const BAD_INPUT: &str = "-> usage: brr [OPTIONS/COMMANDS] [FILENAME]\r
 #[derive(Default)]
 pub struct Init {
     user_input: Option<String>,
+    config: Config,
 }
 
 impl Init {
     pub fn welcome(mut self, initial_input: Option<String>) {
+        // set configs
+        self.config = Config::get_config();
         self.user_input = initial_input;
 
         loop {
@@ -39,8 +43,12 @@ impl Init {
                         println!("{HELP}");
                         self.get_user_input();
                     } else {
-                        let to_open = File::get_file_info(input);
-                        Editor::default(to_open).run();
+                        let to_open = if self.config.open_search {
+                            File::get_file_info(input, true)
+                        } else {
+                            File::get_file_info(input, false)
+                        };
+                        Editor::default(to_open, self.config).run();
                         break
                     }
                 },

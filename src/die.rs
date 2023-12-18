@@ -1,5 +1,6 @@
 use std::io::Error;
 use std::io::stdout;
+
 use crossterm::{terminal::{
     disable_raw_mode,
     LeaveAlternateScreen,

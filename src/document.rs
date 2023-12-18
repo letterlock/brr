@@ -5,11 +5,10 @@ use crate::FileRow;
 use crate::DisplayRow;
 use crate::AppendBuffer;
 
+use log::trace;
 use unicode_segmentation::UnicodeSegmentation;
-// use words_count::WordsCount;
 use std::{
     time::Instant,
-    // path::Path,
     io::{
         Error,
         Write,
@@ -23,8 +22,14 @@ pub struct Document {
     pub display_rows: Vec<DisplayRow>,
     pub append_buffer: AppendBuffer,
     pub last_edit: Instant,
-    pub word_count: usize,
-    pub char_count: usize,
+    pub count: Count,
+    pub start_count: Count,
+}
+
+#[derive(Default, Clone)]
+pub struct Count {
+    pub words: usize,
+    pub chars: usize,
 }
 
 impl Document {
@@ -37,24 +42,27 @@ impl Document {
             display_rows: Vec::new(),
             append_buffer: AppendBuffer::default(),
             last_edit: Instant::now(),
-            word_count: 0,
-            char_count: 0,
+            count: Count::default(),
+            start_count: Count::default(),
         }
     }
 
     pub fn open(file: File) -> Self {
         let file = file;
         let mut file_rows = Vec::new();
-        let mut word_count = 0;
-        let mut char_count = 0;
-
+        let mut count = Count {
+            words: 0,
+            chars: 0,
+        };
         
         for line in file.as_string.lines() {
             let counts = words_count::count(&file.as_string);
-            word_count = counts.words;
-            char_count = counts.characters;
+            count.words = counts.words;
+            count.chars = counts.characters;
             file_rows.push(FileRow::from(line));
         };
+
+        let start_count = count.clone();
 
         Self { 
             file,
@@ -62,12 +70,12 @@ impl Document {
             display_rows: Vec::new(),
             append_buffer: AppendBuffer::default(),
             last_edit: Instant::now(),
-            word_count,
-            char_count,
+            count,
+            start_count,
         }
     }
 
-    pub fn save(&mut self, words: bool) -> Result<(), Error> {
+    pub fn save(&mut self, words: u8) -> Result<(), Error> {
         // BAD: brr should have some way to make sure your
         // file doesn't get screwed because of an error
         // on the program's side
@@ -80,10 +88,11 @@ impl Document {
                 contents.push('\n');
             }
         };
-        if words {
+        if words > 1 {
             if let Some((split_at_index, ..)) = self.append_buffer.buffer
+            // BAD?: should i use split_inclusive() here instead?
             .unicode_word_indices()
-            .nth(5) {
+            .nth(words.saturating_sub(1) as usize) {
                 let split_string = self.append_buffer.buffer
                 .split_at(split_at_index);
                 let first_five_words = split_string.0;
@@ -115,14 +124,14 @@ impl Document {
 
     pub fn sync_file_rows(&mut self) {
         let mut file_rows = Vec::new();
-        let mut word_count = 0;
-        let mut char_count = 0;
+        let mut words = 0;
+        let mut chars = 0;
 
         for line in self.file.as_string.lines() {
             let counts = words_count::count(&self.file.as_string);
             // .replace(&['\n', '\r'][..], " "));
-            word_count = counts.words;
-            char_count = counts.characters;
+            words = counts.words;
+            chars = counts.characters;
             // word_count = content.unicode_words().count();
             // char_count = content
             // .split(&['\n', '\r'][..])
@@ -132,8 +141,8 @@ impl Document {
             file_rows.push(FileRow::from(line));
         }
 
-        self.word_count = word_count;
-        self.char_count = char_count;
+        self.count.words = words;
+        self.count.chars = chars;
         self.file_rows = file_rows;
     }
 
@@ -211,7 +220,6 @@ impl Document {
             self.append_buffer.last_drow = last_display_row.content.clone();
         };
         self.display_rows.pop();
-        // self.char_count = total_len;
     }
 
     pub fn wrap_buffer(&mut self) {
@@ -300,39 +308,56 @@ impl Document {
             };
 
             self.display_rows.push(display_row);
-        }
-        // self.append_buffer.char_count = total_len;
+        };
+
+        // if the buffer and the last file row are both
+        // empty, push an extra display row so files
+        // with more than one newline at the end aren't
+        // displayed wrong
+        if let Some(last_frow) = self.file_rows.last() {
+            if self.append_buffer.buffer.is_empty()
+            && last_frow.content.is_empty() {
+                trace!("pushing extra display row");
+                let display_row = DisplayRow { 
+                    content: String::new(),
+                    len: 0, 
+                    is_buffer: true,
+                };
+    
+                self.display_rows.push(display_row);
+            };
+        };
     }
 
     pub fn render_buffer(&self, row_to_render: &DisplayRow) -> Option<(String, String)> {
-      let content = &row_to_render.content.clone();
+        let content = &row_to_render.content.clone();
 
-      if content.contains(&self.append_buffer.last_drow) {
-          let split_index = self.append_buffer.last_drow.len();
-          let (last_drow, buffer) = content.split_at(split_index);
-          let (mut rendered_last_drow, mut rendered_buffer) = (String::new(), String::new());
+        if content.contains(&self.append_buffer.last_drow) {
+            let split_index = self.append_buffer.last_drow.len();
+            let (last_drow, buffer) = content.split_at(split_index);
+            let (mut rendered_last_drow, mut rendered_buffer) = (String::new(), String::new());
 
-          for grapheme in last_drow[..]
-          .graphemes(true) {
-              if grapheme == "\t" {
-                  rendered_last_drow.push_str("  ");
-              } else {
-                  rendered_last_drow.push_str(grapheme);
-              }
-          };
-          for grapheme in buffer[..]
-          .graphemes(true) {
-              if grapheme == "\t" {
-                  rendered_buffer.push_str("  ");
-              } else {
-                  rendered_buffer.push_str(grapheme);
-              }
-          };
+            for grapheme in last_drow[..]
+            .graphemes(true) {
+                if grapheme == "\t" {
+                    rendered_last_drow.push_str("  ");
+                } else {
+                    rendered_last_drow.push_str(grapheme);
+                }
+            };
+            for grapheme in buffer[..]
+            .graphemes(true) {
+                if grapheme == "\t" {
+                    rendered_buffer.push_str("  ");
+                } else {
+                    rendered_buffer.push_str(grapheme);
+                }
+            };
 
-          return Some((rendered_last_drow, rendered_buffer));
-      }
-      None
-  }
+            return Some((rendered_last_drow, rendered_buffer));
+        }
+        None
+    }
 
     pub fn insert(&mut self, char: char) {
         self.append_buffer.insert(char);
@@ -346,5 +371,15 @@ impl Document {
 
     pub fn get_display_row(&self, index: usize) -> Option<&DisplayRow> {
         self.display_rows.get(index)
+    }
+
+    pub fn written_this_session(&self) -> Count {
+        let words_written = self.count.words.saturating_sub(self.start_count.words);
+        let chars_written = self.count.chars.saturating_sub(self.start_count.chars);
+        
+        Count {
+            words: words_written,
+            chars: chars_written,            
+        }
     }
 }

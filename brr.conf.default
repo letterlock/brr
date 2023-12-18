@@ -1,0 +1,63 @@
+# brr config file
+# todo: general description
+
+# start-mode
+#   defines if brr should start in edit mode. false
+#   starts brr in view mode.
+# options: true, false
+# default: true
+start-edit = true
+
+# open-search
+#   when this is active and you open a file without
+#   an extension at the end, brr will automatically
+#   search the current working directory for a file
+#   matching that name in either .txt or .md format
+#   and open that instead.
+# options: true, false
+# default: true
+open-search = true
+
+# quit-word-count
+#   when this is active, brr will give you an
+#   approximate count of how many words and
+#   characters you wrote during the session.
+#   note: if you open a new file without closing
+#   brr, the count will only show data from the
+#   last file you edited.
+# options: true, false
+# default: true
+count-on-quit = true
+
+# quit-times
+#   defines how many times brr will require you to
+#   press ctrl+q (with unsaved changes) to quit.
+#   note: the total number of times will be one more
+#   than this setting. for example, at the default
+#   of '2', you need to press ctrl+q a total of
+#   three to quit times if you have unsaved changes
+# options: 0-9. 0 to disable.
+# default: 2
+quit-times = 2
+
+# save-time
+#   defines how many seconds of inactivity must
+#   elapse before brr will save your file next
+#   time you press a key.
+# options: 0-9. 0 to disable.
+# default: 5
+save-time = 5
+
+# save-words
+#   defines how many words you must write before
+#   brr saves all but the last one. for example,
+#   if you set it to 6, upon starting the 6th
+#   word, brr will save the last five.
+#   note: setting this to 1 disables it as well 
+#   because otherwise brr would just try to save 
+#   the last 0 words every 1 words written (which
+#   theoretically does nothing, but actually slows
+#   brr down).
+# options: 0-9. 0 or 1 to disable.
+# default: 6
+save-words = 6

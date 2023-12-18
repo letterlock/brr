@@ -3,6 +3,7 @@ use crate::Terminal;
 use crate::Document;
 use crate::File;
 use crate::row::DisplayRow;
+use crate::Config;
 
 use {
     std::{
@@ -25,9 +26,8 @@ use {
     },
 };
 
-//const VERSION: &str = env!("CARGO_PKG_VERSION");
-const QUIT_TIMES: u8 = 3;
-const STANDARD_MESSAGE: &str = "help: press ctrl+h at any time for keybinds";
+// const VERSION: &str = env!("CARGO_PKG_VERSION");
+const STANDARD_MESSAGE: &str = "help: press ctrl+h for keybinds";
 
 // cursor_pos is only really used if the cursor
 // needs to be placed somewhere special (e.g. in the prompt)
@@ -40,6 +40,7 @@ pub struct Editor {
     should_quit: bool,
     mode: Mode,
     quit_times: u8,
+    config: Config,
 }
 
 #[derive(Default)]
@@ -77,8 +78,14 @@ impl Message {
 }
 
 impl Editor {
-    pub fn default(file: File) -> Self {
+    pub fn default(file: File, config: Config) -> Self {
         let initial_message = String::from(STANDARD_MESSAGE);
+        let mode = if config.start_edit {
+            Mode::Edit
+        } else {
+            Mode::View
+        };
+        let quit_times = config.quit_times;
         let mut document;
 
         if file.exists {
@@ -96,8 +103,9 @@ impl Editor {
             view_pos: Position::default(),
             message: Message::from(initial_message),
             should_quit: false,
-            mode: Mode::Edit,
-            quit_times: QUIT_TIMES,
+            mode,
+            quit_times,
+            config,
         }
     }
 
@@ -105,12 +113,23 @@ impl Editor {
         if let Err(error_msg) = Terminal::init() {
             die(error_msg);
         };
+        self.snap_view();
         loop {
             if let Err(error_msg) = self.refresh_screen() {
                 die(error_msg);
             };
             if self.should_quit {
-                if let Err(error_msg) = Terminal::quit() {
+                let written = self.document.written_this_session();
+                let quit_msg = if self.config.count_on_quit {
+                    format!(
+                        "goodbye!\r\napprox. written this session:\r\n  {} words\r\n  {} chars\r\n", 
+                        written.words, 
+                        written.chars,
+                    )
+                } else {
+                    "goodbye!\r\n".to_string()
+                };
+                if let Err(error_msg) = Terminal::quit(quit_msg) {
                     die(error_msg);
                 };
                 break;
@@ -131,9 +150,6 @@ impl Editor {
                 y: self.terminal.height / 2,
             })?;
             self.terminal.cursor_show()?;
-        // } else if self.mode == Mode::Prompt {
-        //     self.terminal.move_cursor(&self.cursor_pos)?;
-        //     self.terminal.cursor_show()?;
         };
         self.terminal.flush()?;
         Ok(())
@@ -190,6 +206,7 @@ impl Editor {
         self.snap_view();
     }
 
+    #[allow(clippy::cast_lossless)]
     fn process_keypress(&mut self, key: KeyEvent) {
         let term_height = self.terminal.height;
 
@@ -204,12 +221,11 @@ impl Editor {
                         ));
                         
                         self.quit_times -= 1;
-    
                         return
                     };
                     self.should_quit = true;
                 },
-                (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(false),
+                (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0),
                 (KeyModifiers::CONTROL, KeyCode::Char('o')) => self.open(),
                 (KeyModifiers::CONTROL, KeyCode::Char('h')) => {
                     self.message = 
@@ -224,11 +240,11 @@ impl Editor {
                 },
                 (_, KeyCode::Char(pressed_char)) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count > 6 {
-                        self.save(true);
-                    } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.append_buffer.word_count == self.config.save_words as usize {
+                        self.save(self.config.save_words);
+                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -236,13 +252,14 @@ impl Editor {
                 },
                 (_, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
-                    if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                         self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
                     }
-                    if self.view_pos.x > 0 
-                    || self.view_pos.y > 0 {
+                    if (self.view_pos.x > 0 
+                    || self.view_pos.y > 0)
+                    && !self.document.append_buffer.buffer.is_empty() {
                         self.document.delete();
                         self.snap_view();
                     };
@@ -250,11 +267,11 @@ impl Editor {
                 },
                 (_, KeyCode::Enter) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count > 6 {
-                        self.save(true);
-                    } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.append_buffer.word_count == self.config.save_words as usize {
+                        self.save(self.config.save_words);
+                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -276,8 +293,8 @@ impl Editor {
 
         // if user presses anything but ctrl+q again, abort quitting by resetting
         // self.quit_times and message
-        if self.quit_times < QUIT_TIMES {
-            self.quit_times = QUIT_TIMES;
+        if self.quit_times < self.config.quit_times {
+            self.quit_times = self.config.quit_times;
             self.message = Message::from(String::new());
         };
     }
@@ -291,6 +308,7 @@ impl Editor {
     // https://github.com/crossterm-rs/crossterm/issues/797
     // https://github.com/crossterm-rs/crossterm/issues/752
     // https://github.com/crossterm-rs/crossterm/pull/778
+    #[allow(clippy::cast_lossless)]
     fn windows_keypress(&mut self, key: KeyEvent) {
         let term_height = self.terminal.height;
 
@@ -310,7 +328,7 @@ impl Editor {
                     };
                     self.should_quit = true;
                 },
-                (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(false),
+                (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0),
                 (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('o')) => self.open(),
                 (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('h')) => {
                     self.message = 
@@ -325,11 +343,11 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Char(pressed_char)) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count > 6 {
-                        self.save(true);
-                    } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.append_buffer.word_count == self.config.save_words as usize {
+                        self.save(self.config.save_words);
+                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -337,13 +355,14 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
-                    if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                         self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
                     }
-                    if self.view_pos.x > 0 
-                    || self.view_pos.y > 0 {
+                    if (self.view_pos.x > 0 
+                    || self.view_pos.y > 0)
+                    && !self.document.append_buffer.buffer.is_empty() {
                         self.document.delete();
                         self.snap_view();
                     };
@@ -351,11 +370,11 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Enter) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count > 6 {
-                        self.save(true);
-                    } else if self.document.last_edit.elapsed() > Duration::new(5, 0)
+                    if self.document.append_buffer.word_count == self.config.save_words as usize {
+                        self.save(self.config.save_words);
+                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
                     && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(false);
+                        self.save(0);
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -469,12 +488,11 @@ impl Editor {
     }
 
     fn draw_status_bar(&mut self) -> Result<(), Error>{
-        // let mut status_bar: String;
         // BAD: dividing this by three leads to the formatting getting screwed up
         // when the width isn't evenly divisible by three
         let item_width = self.terminal.width / 3;
-        let word_count = self.document.word_count;
-        let char_count = self.document.char_count;
+        let words = self.document.count.words;
+        let chars = self.document.count.chars;
         let mut file_name = self.document.file.name.clone();
         let dirty_indicator = if self.document.append_buffer.is_dirty() {
             "(*)"
@@ -487,7 +505,7 @@ impl Editor {
             Mode::View => "VIEWING",
         };
         let count_indicator = format!(
-            "{word_count} words / {char_count} chars"
+            "{words} words / {chars} chars"
         );
 
         let file_indicator = format!("{file_name} {dirty_indicator}");
@@ -520,8 +538,8 @@ impl Editor {
         Ok(())
     }
 
-    pub fn save(&mut self, words: bool) {
-        if !words {
+    pub fn save(&mut self, words: u8) {
+        if words > 1 {
             if let Ok(()) = self.document.save(words) {
                 self.message = 
                 Message::from("file saved successfully".to_string());
@@ -543,7 +561,11 @@ impl Editor {
         ).unwrap_or(None);
         
         if let Some(file_name) = input {
-            let file_info = File::get_file_info(&file_name);
+            let file_info = if self.config.open_search {
+                File::get_file_info(&file_name, true)
+            } else {
+                File::get_file_info(&file_name, false)
+            };
             let mut document;
 
             if file_info.exists {
@@ -565,7 +587,7 @@ impl Editor {
 
     // BAD: this whole closures and callbacks thing is a bit beyond me
     // so for now i'm just going to hope nothing breaks here
-    // too bad!
+    // too bad! https://doc.rust-lang.org/stable/rust-by-example/fn/closures.html
     // BAD: when writing in the prompt, a very long input will cause
     // the cursor to move out of the screen or some other such funkyness
     fn prompt<C>(&mut self, prompt: &str, start_x: usize, mut callback: C) -> Result<Option<String>, Error> 

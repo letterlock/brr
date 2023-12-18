@@ -19,6 +19,7 @@ mod document;
 mod append_buffer;
 mod row;
 mod init;
+mod config;
 
 use die::die;
 use terminal::Terminal;
@@ -34,6 +35,9 @@ use row::{
     DisplayRow,
 };
 use init::Init;
+use config::Config;
+
+use log::{LevelFilter, warn};
 
 // note on converting usize to u16:
 // in reality usize is unneccesary for brr because a document is
@@ -66,34 +70,39 @@ use init::Init;
 // the append buffer
 
 // possible config options:
-// - don't check for files with .md/.txt when opening
-// - quit times
-// - start mode
-// - 
+// - colours?
+// - toggle in app word count?
+// - newline at end of file
+// - cursor style
+
+// BUG: if brr starts in view mode the view starts at top of file
+// BUG: if brr saves as the text moves between lines, the entire last line will be highlighted as if editable
 
 // TODO:
-//   - !!! test brr with absolute file paths
-//   - !!! optimise document.rs
 //   - !!! fix status bar and message bar so i like them more
-//   - !!! config file
-//   - !!! finish -h output
-//   - !!! overuse of self. ?
 //   - !!! log errors to file instead of panic
-//   - !!! total amount written printed in goodbye message
-//   - !!! clean code
-//   - !!! check sizes (usize, u16) to avoid overflow
 //   - !!! verify error handling works
+//   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html
+//   - !!! avoid overuse of .clone()
+//   - !!! check sizes (usize, u16) to avoid overflow
+//   - !!! overuse of self. ?
+//   - !!! check if len() is inefficient
+//   - !!! tidy up code
+//   - !!! finish -h output
+//   -  !! config file description
 //   -  !! add code comments for clarity
-//   -  !! check if len() is inefficient
 //   -   ! don't wrap spaces along with words
 //   -   ! add search function to viewing mode
 //   -   ! scrollbar
 //   -   ! mouse scrolling in view mode
 //   -   ! line numbers
-//   -   ! handle wide characters
+//   -   ! handle wide characters https://github.com/rhysd/kiro-editor
+//   -   ! truncate absolute paths?
 
+#[allow(clippy::unwrap_used)]
 fn main() {
     let args = std::env::args().nth(1);
+    simple_logging::log_to_file("brr.log", LevelFilter::Trace).unwrap();
 
     Init::default().welcome(args);
 }
