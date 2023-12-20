@@ -9,12 +9,13 @@
     clippy::unwrap_used,
     clippy::unwrap_in_result,
     clippy::indexing_slicing,
+    clippy::string_slice,
 )]
 
 mod die;
 mod terminal;
 mod editor;
-mod file;
+mod metadata;
 mod document;
 mod append_buffer;
 mod row;
@@ -28,14 +29,13 @@ use editor::{
     Editor,
     Position
 };
-use file::{File, get_conf_or_log_path};
-use document::Document;
-use document::render;
-use append_buffer::AppendBuffer;
-use row::{
-    FileRow,
-    DisplayRow,
+use metadata::{Metadata, get_conf_or_log_path};
+use document::{
+    Document,
+    render,
 };
+use append_buffer::AppendBuffer;
+use row::DisplayRow;
 use init::Init;
 use config::Config;
 
@@ -72,10 +72,14 @@ use log::{LevelFilter, warn, trace};
 // the append buffer
 
 // NEXT: figure out packaging and distribution.
+// BUG: fucking text wrapping at the end of lines is fucked up if the line gets moved from one term row to the next
+// i need to basically restructure everything so that i can display colors grapheme by grapheme and only color the
+// graphemes that are in the buffer
+// fuck this
+// for now im removing the text highlighting completely until i can fix it properly
 
 // TODO:
 //   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html
-//   - !!! avoid overuse of .clone()
 //   - !!! check sizes (usize, u16) to avoid overflow
 //   - !!! overuse of self. ?
 //   - !!! tidy up code

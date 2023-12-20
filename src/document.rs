@@ -1,72 +1,75 @@
 use crate::Terminal;
-use crate::File;
-use crate::FileRow;
+use crate::Metadata;
 use crate::DisplayRow;
 use crate::AppendBuffer;
+use crate::die::die;
 
-use log::trace;
+use log::{error, trace, warn};
 use unicode_segmentation::UnicodeSegmentation;
+use words_count::WordsCount;
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::io::Seek;
 use std::{
     time::Instant,
     io::{
         Error,
         Write,
+        BufReader,
     },
-    fs::rename,
+    fs::{
+        rename,
+        File,
+    },
 };
-
-// #[derive(Default)]
 pub struct Document {
-    pub file: File,
-    pub file_rows: Vec<FileRow>,
+    pub metadata: Metadata,
+    pub content: String,
     pub display_rows: Vec<DisplayRow>,
     pub append_buffer: AppendBuffer,
     pub last_edit: Instant,
-    pub count: Count,
-    pub start_count: Count,
-}
-
-#[derive(Default, Clone)]
-pub struct Count {
-    pub words: usize,
-    pub chars: usize,
+    pub count: WordsCount,
+    pub start_count: WordsCount,
 }
 
 impl Document {
-    pub fn create(file: File) -> Self {
-        let file_rows = vec![FileRow::default()];
 
-        Self { 
-            file,
-            file_rows,
-            display_rows: Vec::new(),
-            append_buffer: AppendBuffer::default(),
-            last_edit: Instant::now(),
-            count: Count::default(),
-            start_count: Count::default(),
-        }
-    }
-
-    pub fn open(file: File) -> Self {
-        let file = file;
-        let mut file_rows = Vec::new();
-        let mut count = Count {
+    pub fn open(metadata: Metadata) -> Self {
+        let mut content = String::new();
+        let mut count = WordsCount {
             words: 0,
-            chars: 0,
+            characters: 0,
+            ..Default::default()
         };
-        
-        for line in file.as_string.lines() {
-            let counts = words_count::count(&file.as_string);
-            count.words = counts.words;
-            count.chars = counts.characters;
-            file_rows.push(FileRow::from(line));
+
+        match File::open(metadata.path.clone()) {
+            Ok(to_open) => {
+                let mut file = BufReader::new(to_open);
+
+                if let Err(error_msg) = file.read_to_string(&mut content) { 
+                    error!("[document.rs]: {error_msg} - could not read file to string.");
+                    die(error_msg);
+                };
+                count = words_count::count(&content);
+            },
+            Err(error_msg) => {
+                warn!(
+                    "[document.rs]: {} - could not open file. creating a new one at path {}",
+                    error_msg,
+                    &metadata.path.display()
+                );
+            },
         };
+
+        if content.ends_with('\n') {
+            content.pop();
+        }
 
         let start_count = count.clone();
 
         Self { 
-            file,
-            file_rows,
+            metadata,
+            content: content.to_string(),
             display_rows: Vec::new(),
             append_buffer: AppendBuffer::default(),
             last_edit: Instant::now(),
@@ -76,20 +79,16 @@ impl Document {
     }
 
     pub fn save(&mut self, words: u8) -> Result<(), Error> {
-        let mut tmp_path = self.file.path.clone();
+        let mut tmp_path = self.metadata.path.clone();
         tmp_path.set_extension("tmp");
-        if let Some(path_string) = tmp_path.to_str() {
-            trace!("[file.rs]: using config path: {path_string}");
-        }
-        let mut save_file = std::fs::File::create(&tmp_path)?;
-        let mut contents = String::new();
+        
+        trace!(
+            "[document.rs]: saving temp file at path {}",
+            &tmp_path.display()
+        );
 
-        for (index, row) in self.file_rows.iter().enumerate() {
-            contents.push_str(&row.content);
-            if index != self.file_rows.len().saturating_sub(1) {
-                contents.push('\n');
-            }
-        };
+        let mut save_file = File::create(&tmp_path)?;   
+
         if words > 1 {
             if let Some((split_at_index, ..)) = self.append_buffer.buffer
             // BAD?: should i use split_inclusive() here instead?
@@ -100,71 +99,44 @@ impl Document {
                 let first_five_words = split_string.0;
                 let remainder = split_string.1; 
 
-                contents.push_str(first_five_words);
-
+                self.content.push_str(first_five_words);
                 self.append_buffer.buffer = remainder.to_string();
             };
         } else if !self.append_buffer.buffer.is_empty() {
-            contents.push_str(&self.append_buffer.buffer);
+            self.content.push_str(&self.append_buffer.buffer);
             self.append_buffer.buffer.clear();
         };
-        // put a newline at the end of the file for
-        // unix compliance :^)
-        contents.push('\n');
-        
-        self.file.as_string = contents.clone();
 
-        save_file.write_all(contents.as_bytes())?;
+        self.count = words_count::count(&self.content);
+
+        save_file.write_all(self.content.as_bytes())?;
 
         self.last_edit = Instant::now();
         
-        self.sync_file_rows();
+        // self.sync_file_rows();
         self.wrap_file();
         self.wrap_buffer();
-        rename(&tmp_path, &self.file.path)?;
+        rename(&tmp_path, &self.metadata.path)?;
         Ok(())
-    }
-
-    pub fn sync_file_rows(&mut self) {
-        let mut file_rows = Vec::new();
-        let mut words = 0;
-        let mut chars = 0;
-
-        for line in self.file.as_string.lines() {
-            let counts = words_count::count(&self.file.as_string);
-            // .replace(&['\n', '\r'][..], " "));
-            words = counts.words;
-            chars = counts.characters;
-            // word_count = content.unicode_words().count();
-            // char_count = content
-            // .split(&['\n', '\r'][..])
-            // .collect::<String>()
-            // .graphemes(true)
-            // .count();
-            file_rows.push(FileRow::from(line));
-        }
-
-        self.count.words = words;
-        self.count.chars = chars;
-        self.file_rows = file_rows;
     }
 
     // BAD: this currently reflows/renders the ENTIRE file
     // which is inefficient. currently works fine, but i'd
     // like to find a better solution
     pub fn wrap_file(&mut self) {
-        trace!("wrapping file");
         self.display_rows.clear();
         
         let max_width = Terminal::get_term_size().0;
         let mut total_len = 0;
         
-        for row in &self.file_rows {
+        for line in self.content.lines() {
+            let line_len = line.graphemes(true).count();
             // wrap display line if necessary
-            if row.len >= max_width {
+            if line_len >= max_width {
                 // split row into vector of substrings by word boundaries
-                // let row_chunks = row.content[..].split_word_bounds().collect::<Vec<&str>>();
-                let row_chunks = row.content[..].split_inclusive(' ').collect::<Vec<&str>>();
+                // let row_chunks = row.content.split_word_bounds().collect::<Vec<&str>>();
+                
+                let row_chunks = line.split_inclusive(' ').collect::<Vec<&str>>();
                 
                 // count graphemes in each element of the vector
                 // then push to new vector including their length
@@ -210,24 +182,36 @@ impl Document {
                 
                 self.display_rows.push(wrapped_row);
             } else {
-                total_len = row.len.saturating_add(total_len);
+                total_len = line.len().saturating_add(total_len);
                 let display_row = DisplayRow { 
-                    content: row.content.clone(),
-                    len: row.len, 
+                    content: line.to_string(),
+                    len: line_len, 
                     is_buffer: false,
                 };
 
                 self.display_rows.push(display_row);
             }
         }
-        if let Some(last_display_row) = self.display_rows.last() {
-            self.append_buffer.last_drow = last_display_row.content.clone();
-        };
-        self.display_rows.pop();
+
+        // if the file ends with a newline, add an extra
+        // display row so things display correctly
+        if let Some(last_display_row) = &mut self.display_rows.last() {
+            if self.content.ends_with('\n') {
+                let display_row = DisplayRow { 
+                    content: String::new(),
+                    len: 0, 
+                    is_buffer: true,
+                };
+    
+                self.display_rows.push(display_row);
+            } else {
+                self.append_buffer.last_drow = last_display_row.content.clone();
+                self.display_rows.pop();
+            };
+        };        
     }
 
     pub fn wrap_buffer(&mut self) {
-        trace!("wrapping buffer");
         let max_width = Terminal::get_term_size().0;
         let mut total_len = 0;
 
@@ -247,7 +231,7 @@ impl Document {
             if line_len >= max_width {
                 // split line into vector of substrings by word boundaries
                 // let line_chunks = line[..].split_word_bounds().collect::<Vec<&str>>();
-                let line_chunks = line[..].split_inclusive(' ').collect::<Vec<&str>>();
+                let line_chunks = line.split_inclusive(' ').collect::<Vec<&str>>();
 
                 // count graphemes in each element of the vector
                 // then push to new vector including their length
@@ -305,7 +289,9 @@ impl Document {
         }
         // if the end of the buffer is a newline,
         // add an extra row so lines() doesn't cut it off
-        if self.append_buffer.buffer.ends_with('\n') {
+        if self.append_buffer.last_drow.is_empty()
+        && self.append_buffer.buffer.is_empty() 
+        || self.append_buffer.buffer.ends_with('\n'){
             let display_row = DisplayRow { 
                 content: String::new(),
                 len: 0, 
@@ -314,36 +300,6 @@ impl Document {
 
             self.display_rows.push(display_row);
         };
-
-        // if the buffer and the last file row are both
-        // empty, push an extra display row so files
-        // with more than one newline at the end aren't
-        // displayed wrong
-        if let Some(last_frow) = self.file_rows.last() {
-            if self.append_buffer.buffer.is_empty()
-            && last_frow.content.is_empty() {
-                trace!("[document.rs]: pushing extra display row");
-                let display_row = DisplayRow { 
-                    content: String::new(),
-                    len: 0, 
-                    is_buffer: true,
-                };
-    
-                self.display_rows.push(display_row);
-            };
-        };
-    }
-
-    pub fn split_last_row(&self, row: &DisplayRow) -> (String, String) {
-        let mut content = row.content.clone();
-        let row_len = row.content.len();
-        let buffer_len = self.append_buffer.buffer.len();
-        let truncate_len = row_len.saturating_sub(buffer_len);
-        let buffer = self.append_buffer.buffer.clone();
-        
-        content.truncate(truncate_len);
-
-        (content, buffer)
     }
 
     pub fn insert(&mut self, char: char) {
@@ -360,21 +316,48 @@ impl Document {
         self.display_rows.get(index)
     }
 
-    pub fn written_this_session(&self) -> Count {
+    pub fn written_this_session(&self) -> WordsCount {
         let words_written = self.count.words.saturating_sub(self.start_count.words);
-        let chars_written = self.count.chars.saturating_sub(self.start_count.chars);
+        let chars_written = self.count.characters.saturating_sub(self.start_count.characters);
         
-        Count {
+        WordsCount {
             words: words_written,
-            chars: chars_written,            
+            characters: chars_written,
+            ..Default::default()
         }
+    }
+
+    // put a newline at the end of the file for
+    // unix compliance :^)
+    pub fn append_newline(&mut self) {
+        let mut buffer = [0; 1];
+        
+        if let Ok(mut file) = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .append(true)
+        .open(&self.metadata.path) {
+            if file.seek(std::io::SeekFrom::End(-1)).is_err() {
+                warn!("[document.rs]: file is empty.");
+            }
+            if let Err(error_msg) = file.read_exact(&mut buffer[..]) {
+                error!("[document.rs]: {error_msg} - could not read end of file.");
+            };
+            if buffer != [b'\n'] {
+                if let Err(error_msg) = writeln!(file) {
+                    error!("[document.rs]: {error_msg} - could not append newline to end of file.");
+                };
+            }
+        } else {
+            error!("[document.rs]: could not open file to append newline.");
+        };
     }
 }
 
 pub fn render(to_render: &str) -> String {
     let mut rendered = String::new();
 
-    for grapheme in to_render[..]
+    for grapheme in to_render
     .graphemes(true) {
         if grapheme == "\t" {
             rendered.push_str("  ");

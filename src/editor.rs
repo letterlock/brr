@@ -4,8 +4,7 @@ use crate::die;
 use crate::Terminal;
 use crate::Document;
 use crate::render;
-use crate::File;
-// use crate::row::DisplayRow;
+use crate::Metadata;
 use crate::Config;
 
 use {
@@ -80,7 +79,7 @@ impl Message {
 }
 
 impl Editor {
-    pub fn default(file: File, config: Config) -> Self {
+    pub fn default(file: Metadata, config: Config) -> Self {
         let initial_message = String::from(STANDARD_MESSAGE);
         let mode = if config.start_edit {
             Mode::Edit
@@ -90,13 +89,13 @@ impl Editor {
         let quit_times = config.quit_times;
         let mut document;
 
-        if file.exists {
+        // if file.exists {
             document = Document::open(file);
             Document::wrap_file(&mut document);
             Document::wrap_buffer(&mut document);
-        } else {
-            document = Document::create(file);
-        }
+        // } else {
+        //     document = Document::create(file);
+        // }
         
         Self {
             terminal: Terminal::default(),
@@ -136,15 +135,16 @@ impl Editor {
                 let quit_msg = if self.config.count_on_quit {
                     format!(
                         "goodbye!\r\napprox. total prose in {}:\r\n  {} words\r\n  {} chars\r\nwritten this session:\r\n  {} words\r\n  {} chars\r\n", 
-                        self.document.file.name,
+                        self.document.metadata.name,
                         total_prose.words,
-                        total_prose.chars,
+                        total_prose.characters,
                         session_prose.words, 
-                        session_prose.chars,
+                        session_prose.characters,
                     )
                 } else {
                     "goodbye!\r\n".to_string()
                 };
+                self.document.append_newline();
                 if let Err(error_msg) = Terminal::quit(quit_msg) {
                     error!("[terminal.rs -> editor.rs]: {error_msg} - could not quit terminal.");
                     die(error_msg);
@@ -474,25 +474,7 @@ impl Editor {
             // otherwise check if that row exists in append buffer and print it. otherwise print ~
             } else if let Some(index_to_display) = self.view_pos.y.saturating_add(term_row).checked_sub(editing_offset) {
                 if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
-                    // if we're rendering a row from the buffer, check if its the very last row in the file
-                    // if thats the case, split the non-buffer content from it and print them separately
-                    if row_to_render.is_buffer {
-                        if index_to_display == self.document.display_rows.len().saturating_sub(1) {
-                            let (content, buffer) = self.document.split_last_row(row_to_render);
-                            self.terminal.queue_print(&render(&content))?;
-                            self.terminal.reverse_colors()?;
-                            self.terminal.queue_print(&render(&buffer))?;
-                            self.terminal.no_reverse_colors()?;
-                        } else if row_to_render.content.is_empty() {
-                            self.terminal.reverse_colors()?;
-                            self.terminal.queue_print(" ")?;
-                            self.terminal.no_reverse_colors()?;
-                        } else {
-                            self.terminal.queue_print(&render(&row_to_render.content))?;
-                        };
-                    } else {
-                        self.terminal.queue_print(&render(&row_to_render.content))?;
-                    } 
+                    self.terminal.queue_print(&render(&row_to_render.content))?;
                 } else {
                     self.terminal.queue_print("~")?;
                 }
@@ -510,7 +492,7 @@ impl Editor {
         // when the width isn't evenly divisible by three
         // let words = self.document.count.words;
         // let chars = self.document.count.chars;
-        let mut file_name = self.document.file.name.clone();
+        let mut file_name = self.document.metadata.name.clone();
         let dirty_indicator = if self.document.append_buffer.is_dirty() {
             "(*)"
         } else {
@@ -586,19 +568,19 @@ impl Editor {
         
         if let Some(file_name) = input {
             let file_info = if self.config.open_search {
-                File::get_file_info(&file_name, true)
+                Metadata::get_file_info(&file_name, true)
             } else {
-                File::get_file_info(&file_name, false)
+                Metadata::get_file_info(&file_name, false)
             };
             let mut document;
 
-            if file_info.exists {
+            // if file_info.exists {
                 document = Document::open(file_info);
                 Document::wrap_file(&mut document);
                 Document::wrap_buffer(&mut document);
-            } else {
-                document = Document::create(file_info);
-            }
+            // } else {
+            //     document = Document::create(file_info);
+            // }
 
             self.document = document;
             

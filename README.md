@@ -13,13 +13,9 @@ for this reason, it consists of an (intentionally) minimal main set of "features
 
 it was my first ever project and i never finished its original c-based incarnation. eventually, i decided i would do the easy and straightforward thing and port it to rust. :^)  
 
-brr was originally adapted from [this](https://viewsourcecode.org/snaptoken/kilo/01.setup.html) tutorial, and later ported with the help of [this](https://www.flenker.blog/hecto/) one.  
+brr was originally adapted from [this](https://viewsourcecode.org/snaptoken/kilo/01.setup.html) tutorial, and later ported with the help of [this](https://www.flenker.blog/hecto/) one. i also took a lot of inspiration from the way [kibi](https://github.com/ilai-deutel/kibi) does things, it's a very cool project that is a very faithful implimentation of the original kilo project in rust. the code is extremely well documented and flexible, and it does some very clever things to achieve such a tiny codebase.  
 
-i still have no clue what i'm doing, my code is very inefficient and probably downright stupid in some places, but everything seems to be working!  
-
-feel free to modify and change it in any way, bring up issues and suggest changes or clean up my code with pull requests.  
-
-if you do tidy something and submit a pull, i would very much appreciate it if you would explain your thought process, so i can learn!  
+i still have no clue what i'm doing, my code is very inefficient and probably downright stupid in some places, but everything seems to be working! if you do find a bug, fix something or tidy something up, feel free to submit an issue or a pull request. if you do fix or tidy something, i would very much appreciate it if you would explain how and why, so i can learn!  
 
 finally, just to be clear: **you should back up any really important documents before editing them with brr.** i've done all i can to make sure nothing happens, and i'll be using brr myself, so i have an interest in making it not delete things i care about, but i'm a novice amateur programmer *at best*. as with any time you're trusting a file you care about to a stranger's program -- be careful!
 

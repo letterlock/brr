@@ -1,14 +1,9 @@
-use crate::die;
-
 use std::{
     path::{
         Path,
         PathBuf,
     },
-    fs::{
-        read_dir,
-        read_to_string,
-    },
+    fs::read_dir,
     env::{
         current_dir,
         current_exe,
@@ -16,13 +11,12 @@ use std::{
 };
 use log::{error, info, trace};
 
-pub struct File {
+pub struct Metadata {
     pub current_dir: PathBuf,
     pub path: PathBuf,
     pub name: String,
     pub extension: Extension,
-    pub exists: bool,
-    pub as_string: String,
+    // pub exists: bool,
 }
 
 #[derive(PartialEq)]
@@ -35,16 +29,15 @@ pub enum Extension {
 
 // BAD: this doesn't behave intuitively if there is a both a
 // [file_name].md and [file_name].txt that match
-impl File {
+impl Metadata {
     pub fn get_file_info(user_input: &str, search_ext: bool) -> Self {
         let mut path = PathBuf::from(&user_input);
         let mut name = user_input.to_string();
-        let mut exists = path.is_file();
-        let mut extension = File::get_extension(&path);
-        let mut as_string = String::new();
+        // let mut exists = path.is_file();
+        let mut extension = Metadata::get_extension(&path);
         let current_directory = match current_dir() {
             Err(error_msg) => {
-                error!("[file.rs]: {error_msg} - could not get current directory.");
+                error!("[metadata.rs]: {error_msg} - could not get current directory.");
                 PathBuf::new()
             },
             Ok(dir) => dir,
@@ -59,16 +52,16 @@ impl File {
                     if let Some(name_from_path) = os_str.to_str() {
                         name = name_from_path.to_string();
                     } else {
-                        error!("[file.rs]: could not convert OsStr, is file path a valid UTF-8 string?");
+                        error!("[metadata.rs]: could not convert OsStr, is file path a valid UTF-8 string?");
                     };
                 } else {
-                    error!("[file.rs]: could not get file name from path, does path terminate in '..'?");
+                    error!("[metadata.rs]: could not get file name from path, does path terminate in '..'?");
                 };
                 if extension == Extension::None 
                 && search_ext {
                     if let Some(parent) = path.parent() {
                         let parent = parent.to_path_buf();
-                        let (path_result, name_result, ext_result) = File::search_ext(&parent, &name);
+                        let (path_result, name_result, ext_result) = Metadata::search_ext(&parent, &name);
 
                         if ext_result == Extension::None {
                             info!("extension search yielded no results.");
@@ -76,7 +69,7 @@ impl File {
                             path = path_result;
                             name = name_result;
                             extension = ext_result;
-                            exists = true;
+                            // exists = true;
                         };
                     };
                 } else {
@@ -92,7 +85,7 @@ impl File {
             // or the current directory.
             if extension == Extension::None 
             && search_ext {
-                let (path_result, name_result, ext_result) = File::search_ext(&current_directory, &name);
+                let (path_result, name_result, ext_result) = Metadata::search_ext(&current_directory, &name);
 
                 if ext_result == Extension::None {
                     info!("extension search yielded no results.");
@@ -100,18 +93,8 @@ impl File {
                     path = path_result;
                     name = name_result;
                     extension = ext_result;
-                    exists = true;
+                    // exists = true;
                 };
-            };
-        };
-
-        if exists {
-            match read_to_string(&path) {
-                Ok(file_string) => as_string = file_string,
-                Err(error_msg) => {
-                    error!("[file.rs]: {error_msg} - could not read file to string.");
-                    die(error_msg);
-                },
             };
         };
 
@@ -120,8 +103,7 @@ impl File {
             path,
             name,
             extension,
-            exists,
-            as_string,
+            // exists,
         }
     }
 
@@ -191,7 +173,7 @@ pub fn get_conf_or_log_path(config: bool) -> Option<PathBuf> {
                     path.push(PathBuf::from("brr.conf"));
                 
                     if let Some(path_string) = path.to_str() {
-                        trace!("[file.rs]: using config path: {path_string}");
+                        trace!("[metadata.rs]: using config path: {path_string}");
                     }
                     return Some(path);
                 };
@@ -199,11 +181,11 @@ pub fn get_conf_or_log_path(config: bool) -> Option<PathBuf> {
             
                 return Some(path);
             };
-            error!("[file.rs]: executable seems to have no parent folder. using default config.");
+            error!("[metadata.rs]: executable seems to have no parent folder. using default config.");
             return None;
         },
         Err(error_msg) => {
-            error!("[file.rs]: {error_msg} - could not find current executable path. using default config.");
+            error!("[metadata.rs]: {error_msg} - could not find current executable path. using default config.");
             return None;
         },
     };

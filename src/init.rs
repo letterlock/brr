@@ -1,5 +1,5 @@
 use crate::Editor;
-use crate::File;
+use crate::Metadata;
 use crate::config::Config;
 
 use std::io::Error;
@@ -66,9 +66,9 @@ impl Init {
                     },
                     _ => {
                         let to_open = if self.config.open_search {
-                            File::get_file_info(input, true)
+                            Metadata::get_file_info(input, true)
                         } else {
-                            File::get_file_info(input, false)
+                            Metadata::get_file_info(input, false)
                         };
                         Editor::default(to_open, self.config).run();
                         break
