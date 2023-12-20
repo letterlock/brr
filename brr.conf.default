@@ -1,11 +1,14 @@
 # brr config file
-# todo: general description
+# this is the default config file for brr, you can
+# copy it and change it to your liking, just make
+# sure it's called brr.conf and in the correct
+# folder (todo)
 
-# start-mode
+# start-edit
 #   defines if brr should start in edit mode. false
 #   starts brr in view mode.
 # options: true, false
-# default: true
+# default: start-edit = true
 start-edit = true
 
 # open-search
@@ -15,7 +18,7 @@ start-edit = true
 #   matching that name in either .txt or .md format
 #   and open that instead.
 # options: true, false
-# default: true
+# default: open-search = true
 open-search = true
 
 # quit-word-count
@@ -26,8 +29,19 @@ open-search = true
 #   brr, the count will only show data from the
 #   last file you edited.
 # options: true, false
-# default: true
+# default: count-on-quit = true
 count-on-quit = true
+
+# cursor-style
+#   change the style of your cursor. you can choose
+#   between a block, underscore or bar, and whether
+#   it is blinking. default is just whatever your
+#   system is already using in the terminal.
+# options: default, blinking-block, steady-block, 
+#          blinking-underscore, steady-underscore,
+#          blinking-bar, steady-bar
+# default: cursor-style = default
+cursor-style = default
 
 # quit-times
 #   defines how many times brr will require you to
@@ -37,7 +51,7 @@ count-on-quit = true
 #   of '2', you need to press ctrl+q a total of
 #   three to quit times if you have unsaved changes
 # options: 0-9. 0 to disable.
-# default: 2
+# default: quit-times = 2
 quit-times = 2
 
 # save-time
@@ -45,7 +59,7 @@ quit-times = 2
 #   elapse before brr will save your file next
 #   time you press a key.
 # options: 0-9. 0 to disable.
-# default: 5
+# default: save-time = 5
 save-time = 5
 
 # save-words
@@ -59,5 +73,14 @@ save-time = 5
 #   theoretically does nothing, but actually slows
 #   brr down).
 # options: 0-9. 0 or 1 to disable.
-# default: 6
+# default: save-words = 6
 save-words = 6
+
+
+        style if style.contains("default") => Some(SetCursorStyle::DefaultUserShape),
+        style if style.contains("blinking-block") => Some(SetCursorStyle::BlinkingBlock),
+        style if style.contains("steady-block") => Some(SetCursorStyle::SteadyBlock),
+        style if style.contains("blinking-underscore") => Some(SetCursorStyle::BlinkingUnderScore),
+        style if style.contains("steady-underscore") => Some(SetCursorStyle::SteadyUnderScore),
+        style if style.contains("blinking-bar") => Some(SetCursorStyle::BlinkingBar),
+        style if style.contains("steady-bar") => Some(SetCursorStyle::SteadyBar),

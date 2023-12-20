@@ -3,8 +3,9 @@ use log::error;
 use crate::die;
 use crate::Terminal;
 use crate::Document;
+use crate::render;
 use crate::File;
-use crate::row::DisplayRow;
+// use crate::row::DisplayRow;
 use crate::Config;
 
 use {
@@ -28,7 +29,6 @@ use {
     },
 };
 
-// const VERSION: &str = env!("CARGO_PKG_VERSION");
 const STANDARD_MESSAGE: &str = "help: press ctrl+h for keybinds";
 
 // cursor_pos is only really used if the cursor
@@ -116,6 +116,9 @@ impl Editor {
             error!("[terminal.rs -> editor.rs]: {error_msg} - could not init terminal.");
             die(error_msg);
         };
+        if let Err(error_msg) = self.terminal.set_cursor_style(self.config.cursor_style) {
+            error!("[terminal.rs -> editor.rs]: {error_msg} - could not set cursor style.");
+        }
         // snap view to end of document.
         if self.mode == Mode::View {
             self.view_pos.y = self.document.display_rows.len().saturating_sub(1);
@@ -434,7 +437,7 @@ impl Editor {
     }
 
     fn viewing_scroll(&mut self, direction: &Direction, amount: usize) {
-        let max_height = self.document.display_rows.len().saturating_sub(1);
+        let max_height = self.document.display_rows.len();
         let term_height = self.terminal.height;
         let position = &mut self.view_pos;
 
@@ -461,44 +464,40 @@ impl Editor {
                 let index_to_display = self.view_pos.y.saturating_add(term_row);
 
                 if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
-                    self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
+                    self.terminal.queue_print(&render(&row_to_render.content))?;
                 } else {
                     self.terminal.queue_print("~")?;
                 }
             // draw rows in edit/prompt mode
-            } else {
-                // if ((y offset + current term row) - editing offset) does not overflow (read:
-                // would not become less than zero), check if that row exists in file and print it.
-                // otherwise check if that row exists in append buffer and print it. otherwise print ~
-                if let Some(index_to_display) = self.view_pos.y.saturating_add(term_row).checked_sub(editing_offset) {
-                    if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
-                        // if we're rendering a row from the append buffer, check if it's the 
-                        // joining row from the rest of the file. if so, split it and render
-                        // the parts separately so we can invert the colours on the buffer only
-                        if row_to_render.is_buffer {
-                            if let Some((rendered_row, rendered_buffer)) = self.document.render_buffer(row_to_render) {
-                                self.terminal.queue_print(&rendered_row)?;
-                                self.terminal.reverse_colors()?;
-                                self.terminal.queue_print(&rendered_buffer)?;
-                                self.terminal.no_reverse_colors()?;
-                            } else {
-                                self.terminal.reverse_colors()?;
-                                if row_to_render.content.is_empty() {
-                                    self.terminal.queue_print(" ")?;
-                                } else {
-                                    self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
-                                }
-                                self.terminal.no_reverse_colors()?;
-                            };
+            // if ((y offset + current term row) - editing offset) does not overflow (read:
+            // would not become less than zero), check if that row exists in file and print it.
+            // otherwise check if that row exists in append buffer and print it. otherwise print ~
+            } else if let Some(index_to_display) = self.view_pos.y.saturating_add(term_row).checked_sub(editing_offset) {
+                if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
+                    // if we're rendering a row from the buffer, check if its the very last row in the file
+                    // if thats the case, split the non-buffer content from it and print them separately
+                    if row_to_render.is_buffer {
+                        if index_to_display == self.document.display_rows.len().saturating_sub(1) {
+                            let (content, buffer) = self.document.split_last_row(row_to_render);
+                            self.terminal.queue_print(&render(&content))?;
+                            self.terminal.reverse_colors()?;
+                            self.terminal.queue_print(&render(&buffer))?;
+                            self.terminal.no_reverse_colors()?;
+                        } else if row_to_render.content.is_empty() {
+                            self.terminal.reverse_colors()?;
+                            self.terminal.queue_print(" ")?;
+                            self.terminal.no_reverse_colors()?;
                         } else {
-                            self.terminal.queue_print(&DisplayRow::render(row_to_render))?;
-                        } 
+                            self.terminal.queue_print(&render(&row_to_render.content))?;
+                        };
                     } else {
-                        self.terminal.queue_print("~")?;
-                    }
+                        self.terminal.queue_print(&render(&row_to_render.content))?;
+                    } 
                 } else {
                     self.terminal.queue_print("~")?;
                 }
+            } else {
+                self.terminal.queue_print("~")?;
             }
             self.terminal.clear_line()?;
             self.terminal.new_line()?;
@@ -560,17 +559,22 @@ impl Editor {
 
     pub fn save(&mut self, words: u8) {
         if words > 1 {
-            if let Ok(()) = self.document.save(words) {
-                self.message = 
-                Message::from("file saved successfully".to_string());
-            } else {
-                self.message =
-                Message::from("error writing file".to_string());
-            }
-        } else if self.document.save(words).is_err() {
-            self.message =
-            Message::from("error writing file".to_string());
-        }
+            match self.document.save(words) {
+                Ok(()) => (),
+                Err(error_msg) => {
+                    self.message = Message::from("error writing file. see log for details.".to_string());
+                    error!("[document.rs -> editor.rs]: {error_msg} - could not save file.");
+                },
+            };
+        } else {
+            match self.document.save(words) {
+                Ok(()) => self.message = Message::from("file saved successfully.".to_string()),
+                Err(error_msg) => {
+                    self.message = Message::from("error writing file. see log for details.".to_string());
+                    error!("[document.rs -> editor.rs]: {error_msg} - could not save file.");
+                },
+            };
+        };
     }
 
     pub fn open(&mut self) {
@@ -634,7 +638,7 @@ impl Editor {
         loop {
             self.message = Message::from(format!("{prompt}{user_input}"));
             self.refresh_prompt()?;
-            let event = read()?; // handle this and ideally use fn already in Terminal.rs
+            let event = read()?;
 
             // BAD: windows boilerplate
             if OS == "windows" {

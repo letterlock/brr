@@ -35,19 +35,19 @@ impl From<&str> for FileRow {
 //     }
 // }
 
-impl DisplayRow {
-    pub fn render(&self) -> String {
-        let mut line = String::new();
+// impl DisplayRow {
+//     pub fn render(&self) -> String {
+//         let mut line = String::new();
         
-        for grapheme in self.content[..]
-        .graphemes(true) {
-            if grapheme == "\t" {
-                line.push_str("  ");
-            } else {
-                line.push_str(grapheme);
-            }
-        }
+//         for grapheme in self.content[..]
+//         .graphemes(true) {
+//             if grapheme == "\t" {
+//                 line.push_str("  ");
+//             } else {
+//                 line.push_str(grapheme);
+//             }
+//         }
 
-        line
-    }
-}
+//         line
+//     }
+// }

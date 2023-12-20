@@ -12,6 +12,7 @@ use std::{
         Error,
         Write,
     },
+    fs::rename,
 };
 
 // #[derive(Default)]
@@ -75,10 +76,12 @@ impl Document {
     }
 
     pub fn save(&mut self, words: u8) -> Result<(), Error> {
-        // BAD: brr should have some way to make sure your
-        // file doesn't get screwed because of an error
-        // on the program's side
-        let mut save_file = std::fs::File::create(&self.file.path)?;
+        let mut tmp_path = self.file.path.clone();
+        tmp_path.set_extension("tmp");
+        if let Some(path_string) = tmp_path.to_str() {
+            trace!("[file.rs]: using config path: {path_string}");
+        }
+        let mut save_file = std::fs::File::create(&tmp_path)?;
         let mut contents = String::new();
 
         for (index, row) in self.file_rows.iter().enumerate() {
@@ -118,6 +121,7 @@ impl Document {
         self.sync_file_rows();
         self.wrap_file();
         self.wrap_buffer();
+        rename(&tmp_path, &self.file.path)?;
         Ok(())
     }
 
@@ -149,6 +153,7 @@ impl Document {
     // which is inefficient. currently works fine, but i'd
     // like to find a better solution
     pub fn wrap_file(&mut self) {
+        trace!("wrapping file");
         self.display_rows.clear();
         
         let max_width = Terminal::get_term_size().0;
@@ -222,6 +227,7 @@ impl Document {
     }
 
     pub fn wrap_buffer(&mut self) {
+        trace!("wrapping buffer");
         let max_width = Terminal::get_term_size().0;
         let mut total_len = 0;
 
@@ -316,7 +322,7 @@ impl Document {
         if let Some(last_frow) = self.file_rows.last() {
             if self.append_buffer.buffer.is_empty()
             && last_frow.content.is_empty() {
-                trace!("pushing extra display row");
+                trace!("[document.rs]: pushing extra display row");
                 let display_row = DisplayRow { 
                     content: String::new(),
                     len: 0, 
@@ -328,34 +334,16 @@ impl Document {
         };
     }
 
-    pub fn render_buffer(&self, row_to_render: &DisplayRow) -> Option<(String, String)> {
-        let content = &row_to_render.content.clone();
+    pub fn split_last_row(&self, row: &DisplayRow) -> (String, String) {
+        let mut content = row.content.clone();
+        let row_len = row.content.len();
+        let buffer_len = self.append_buffer.buffer.len();
+        let truncate_len = row_len.saturating_sub(buffer_len);
+        let buffer = self.append_buffer.buffer.clone();
+        
+        content.truncate(truncate_len);
 
-        if content.contains(&self.append_buffer.last_drow) {
-            let split_index = self.append_buffer.last_drow.len();
-            let (last_drow, buffer) = content.split_at(split_index);
-            let (mut rendered_last_drow, mut rendered_buffer) = (String::new(), String::new());
-
-            for grapheme in last_drow[..]
-            .graphemes(true) {
-                if grapheme == "\t" {
-                    rendered_last_drow.push_str("  ");
-                } else {
-                    rendered_last_drow.push_str(grapheme);
-                }
-            };
-            for grapheme in buffer[..]
-            .graphemes(true) {
-                if grapheme == "\t" {
-                    rendered_buffer.push_str("  ");
-                } else {
-                    rendered_buffer.push_str(grapheme);
-                }
-            };
-
-            return Some((rendered_last_drow, rendered_buffer));
-        }
-        None
+        (content, buffer)
     }
 
     pub fn insert(&mut self, char: char) {
@@ -381,4 +369,19 @@ impl Document {
             chars: chars_written,            
         }
     }
+}
+
+pub fn render(to_render: &str) -> String {
+    let mut rendered = String::new();
+
+    for grapheme in to_render[..]
+    .graphemes(true) {
+        if grapheme == "\t" {
+            rendered.push_str("  ");
+        } else {
+            rendered.push_str(grapheme);
+        }
+    }
+
+    rendered
 }

@@ -1,9 +1,13 @@
 [package]
 name = "brr"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+description = "the perfunctory prose proliferator"
+homepage = "https://github.com/letterlock/brr"
+repository = "https://github.com/letterlock/brr"
+readme = "README.md"
+license = "GPL-3.0-or-later"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 crossterm = "0.27.0"

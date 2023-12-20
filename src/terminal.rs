@@ -1,4 +1,7 @@
-use crate::{Position, die};
+use crate::{
+    Position, 
+    die,
+};
 
 use crossterm::{
     terminal::{
@@ -6,13 +9,16 @@ use crossterm::{
         enable_raw_mode,
         Clear,
         ClearType,
-        size, LeaveAlternateScreen, EnterAlternateScreen,
+        size, 
+        LeaveAlternateScreen, 
+        EnterAlternateScreen,
     },
     cursor::{
         MoveToNextLine,
         MoveTo,
         Hide,
         Show,
+        SetCursorStyle,
     },
     style::{
         Print,
@@ -71,6 +77,7 @@ impl Terminal {
         stdout().queue(Hide)?;
         stdout().queue(MoveTo(0, 0))?;
         stdout().queue(Clear(ClearType::All))?;
+        stdout().queue(SetCursorStyle::DefaultUserShape)?;
         stdout().queue(Show)?;
         stdout().queue(LeaveAlternateScreen)?;
         stdout().queue(Print(quit_msg))?;
@@ -142,6 +149,11 @@ impl Terminal {
 
     pub fn cursor_hide_now(&mut self) -> Result<(), Error> {
         self.stdout.execute(Hide)?;
+        Ok(())
+    }
+
+    pub fn set_cursor_style(&mut self, style: SetCursorStyle) -> Result<(), Error> {
+        self.stdout.execute(style)?;
         Ok(())
     }
 }

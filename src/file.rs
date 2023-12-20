@@ -9,9 +9,12 @@ use std::{
         read_dir,
         read_to_string,
     },
-    env::current_dir,
+    env::{
+        current_dir,
+        current_exe,
+    },
 };
-use log::{error, info};
+use log::{error, info, trace};
 
 pub struct File {
     pub current_dir: PathBuf,
@@ -172,4 +175,36 @@ impl File {
         };
         (path, name, Extension::None)
     }
+}
+
+// attempts to get config or log file path in the
+// folder of the brr executable pass true for 
+// config path or false for log path.
+#[allow(clippy::needless_return)] // seems to be a false positive
+pub fn get_conf_or_log_path(config: bool) -> Option<PathBuf> {
+    match current_exe() {
+        Ok(exe_path) => {
+            if let Some(parent) = exe_path.parent() {
+                let mut path = parent.to_path_buf();
+                
+                if config {
+                    path.push(PathBuf::from("brr.conf"));
+                
+                    if let Some(path_string) = path.to_str() {
+                        trace!("[file.rs]: using config path: {path_string}");
+                    }
+                    return Some(path);
+                };
+                path.push(PathBuf::from("brr.log"));
+            
+                return Some(path);
+            };
+            error!("[file.rs]: executable seems to have no parent folder. using default config.");
+            return None;
+        },
+        Err(error_msg) => {
+            error!("[file.rs]: {error_msg} - could not find current executable path. using default config.");
+            return None;
+        },
+    };
 }

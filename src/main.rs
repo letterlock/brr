@@ -22,13 +22,15 @@ mod init;
 mod config;
 
 use die::die;
+use log::error;
 use terminal::Terminal;
 use editor::{
     Editor,
     Position
 };
-use file::File;
+use file::{File, get_conf_or_log_path};
 use document::Document;
+use document::render;
 use append_buffer::AppendBuffer;
 use row::{
     FileRow,
@@ -37,7 +39,7 @@ use row::{
 use init::Init;
 use config::Config;
 
-use log::{LevelFilter, warn};
+use log::{LevelFilter, warn, trace};
 
 // note on converting usize to u16:
 // in reality usize is unneccesary for brr because a document is
@@ -69,14 +71,7 @@ use log::{LevelFilter, warn};
 // also brr doesn't currently count words or characters in
 // the append buffer
 
-// possible config options:
-// - colours?
-// - toggle in app word count?
-// - newline at end of file
-// - cursor style
-
-// BUG: if brr starts in view mode the view starts at top of file
-// BUG: if brr saves as the text moves between lines, the entire last line will be highlighted as if editable
+// NEXT: figure out packaging and distribution.
 
 // TODO:
 //   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html
@@ -84,22 +79,34 @@ use log::{LevelFilter, warn};
 //   - !!! check sizes (usize, u16) to avoid overflow
 //   - !!! overuse of self. ?
 //   - !!! tidy up code
-//   - !!! finish -h output
 //   - !!! fix errors in editor.rs::refresh_screen()
 //   -  !! config file description
 //   -  !! add code comments for clarity
-//   -   ! don't wrap spaces along with words
-//   -   ! add search function to viewing mode
-//   -   ! scrollbar
-//   -   ! mouse scrolling in view mode
-//   -   ! line numbers
-//   -   ! handle wide characters https://github.com/rhysd/kiro-editor
-//   -   ! truncate absolute paths?
+// MAYBE:
+//   -     don't wrap spaces along with words
+//   -     add search function to viewing mode
+//   -     scrollbar
+//   -     mouse scrolling in view mode
+//   -     line numbers
+//   -     handle wide characters https://github.com/rhysd/kiro-editor
+//   -     truncate absolute paths?
 
 #[allow(clippy::unwrap_used)]
 fn main() {
     let args = std::env::args().nth(1);
-    simple_logging::log_to_file("brr.log", LevelFilter::Trace).unwrap();
 
-    Init::default().welcome(args);
+    if let Some(log_path) = get_conf_or_log_path(false) {
+        simple_logging::log_to_file(&log_path, LevelFilter::Trace).unwrap();
+        
+        if let Some(path_string) = log_path.to_str() {
+            trace!("[main.rs]: using log path: {path_string}");
+        }
+    } else {
+        panic!("cannot find executable. do you have permission to access the folder containing brr?")
+    };
+
+    match Init::default().welcome(args) {
+        Ok(()) => (),
+        Err(error_msg) => error!("[init.rs -> main.rs]: {error_msg} - couldn't flush stdout."),
+    };
 }
