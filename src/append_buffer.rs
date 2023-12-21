@@ -1,10 +1,11 @@
 use unicode_segmentation::UnicodeSegmentation;
+use crate::Position;
 
 #[derive(Default)]
 pub struct AppendBuffer {
     pub buffer: String,
     pub word_count: usize,
-    pub last_drow: String,
+    pub join_pos: Position,
 }
 
 impl AppendBuffer {

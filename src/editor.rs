@@ -1,4 +1,6 @@
 use log::error;
+use log::trace;
+// use log::trace;
 
 use crate::die;
 use crate::Terminal;
@@ -89,13 +91,9 @@ impl Editor {
         let quit_times = config.quit_times;
         let mut document;
 
-        // if file.exists {
-            document = Document::open(file);
-            Document::wrap_file(&mut document);
-            Document::wrap_buffer(&mut document);
-        // } else {
-        //     document = Document::create(file);
-        // }
+        document = Document::open(file);
+        Document::wrap_file(&mut document);
+        Document::wrap_buffer(&mut document);
         
         Self {
             terminal: Terminal::default(),
@@ -120,7 +118,7 @@ impl Editor {
         }
         // snap view to end of document.
         if self.mode == Mode::View {
-            self.view_pos.y = self.document.display_rows.len().saturating_sub(1);
+            self.view_pos.y = self.document.file_drows.len().saturating_sub(1);
         }
         self.snap_view();
 
@@ -417,14 +415,20 @@ impl Editor {
     // if in editing mode, also snap cursor to end of line
     fn snap_view(&mut self) {
         let term_height = self.terminal.height;
-        let max_height = self.document.display_rows.len();
-        let last_display_index = self.document.display_rows.len().saturating_sub(1);
+        let max_height = self.document.display_len();
+        let last_display_index = max_height.saturating_sub(1);
 
         if self.mode == Mode::Edit {
             self.view_pos.y = last_display_index;
-            if let Some(last_drow) = self.document.get_display_row(last_display_index) {
-                self.view_pos.x = last_drow.len;
+            // we should always be in the buffer in edit mode,
+            // so it should be safe to just get a buffer drow
+            // at the last index here
+            if let Some(last_buf_drow) = self.document.buf_drows.last() {
+                self.view_pos.x = last_buf_drow.len;
+            } else if let Some(last_file_drow) = self.document.file_drows.last() {
+                self.view_pos.x = last_file_drow.len;
             } else {
+                trace!("no last row");
                 self.view_pos.x = 0;
             }
         } else if self.mode == Mode::View {
@@ -437,7 +441,7 @@ impl Editor {
     }
 
     fn viewing_scroll(&mut self, direction: &Direction, amount: usize) {
-        let max_height = self.document.display_rows.len();
+        let max_height = self.document.display_len();
         let term_height = self.terminal.height;
         let position = &mut self.view_pos;
 
@@ -457,27 +461,102 @@ impl Editor {
         let term_height = self.terminal.height;
         let editing_offset = self.terminal.height / 2;
 
-        // BAD?: lot of nested ifs here, maybe i can clean this up.
         for term_row in 0..term_height {
             // draw rows in view mode
             if self.mode == Mode::View {
                 let index_to_display = self.view_pos.y.saturating_add(term_row);
 
-                if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
-                    self.terminal.queue_print(&render(&row_to_render.content))?;
-                } else {
-                    self.terminal.queue_print("~")?;
-                }
+                match self.document.get_display_row(index_to_display) {
+                    (Some(file_drow), None) => {
+                        self.terminal.queue_print(&render(&file_drow.content))?;
+                    },
+                    (None, Some(buf_drow)) => {
+                        self.terminal.queue_print(&render(&buf_drow.content))?;
+                    },
+                    (Some(file_drow), Some(buf_drow)) => {
+                        self.terminal.queue_print(&render(&file_drow.content))?;
+                        self.terminal.queue_print(&render(&buf_drow.content))?;
+                    },
+                    (None, None) => {
+                        self.terminal.queue_print("~")?;
+                    },
+                };
+                // // if there is a file display row at index
+                // if let Some(row_to_render) = self.document.get_file_drow(index_to_display) {
+                //     // print it
+                // // otherwise if there is a buffer display row at index
+                // } else if let Some(row_to_render) = self.document.get_buf_drow(index_to_display) {
+                //     // print it
+                //     self.terminal.queue_print(&render(&row_to_render.content))?;
+                // } else {
+                //     // otherwise just print ~
+                //     self.terminal.queue_print("~")?;
+                // }
             // draw rows in edit/prompt mode
-            // if ((y offset + current term row) - editing offset) does not overflow (read:
-            // would not become less than zero), check if that row exists in file and print it.
-            // otherwise check if that row exists in append buffer and print it. otherwise print ~
+            // by checking if ((view position's y + current term row) - editing offset) 
+            // does not overflow (read: would not become less than zero), we can make sure
+            // to keep the view in the middle of the screen and print '~' before it
             } else if let Some(index_to_display) = self.view_pos.y.saturating_add(term_row).checked_sub(editing_offset) {
-                if let Some(row_to_render) = self.document.get_display_row(index_to_display) {
-                    self.terminal.queue_print(&render(&row_to_render.content))?;
-                } else {
-                    self.terminal.queue_print("~")?;
-                }
+                match self.document.get_display_row(index_to_display) {
+                    (Some(file_drow), None) => {
+                        self.terminal.queue_print(&render(&file_drow.content))?;
+                    },
+                    (None, Some(buf_drow)) => {
+                        if buf_drow.content.is_empty() {
+                            self.terminal.reverse_colors()?;
+                            self.terminal.queue_print(" ")?;
+                            self.terminal.no_reverse_colors()?;
+                        } else {
+                            self.terminal.reverse_colors()?;
+                            self.terminal.queue_print(&render(&buf_drow.content))?;
+                            self.terminal.no_reverse_colors()?;
+                        }
+                    },
+                    (Some(file_drow), Some(buf_drow)) => {
+                        self.terminal.queue_print(&render(&file_drow.content))?;
+                        self.terminal.reverse_colors()?;
+                        self.terminal.queue_print(&render(&buf_drow.content))?;
+                        self.terminal.no_reverse_colors()?;
+                    },
+                    (None, None) => {
+                        self.terminal.queue_print("~")?;
+                    },
+                };
+                // // to render the display rows of both the file and the append buffer:
+                // // start by checking if the index to display is just a regular file row
+                // if let Some(row_to_render) = self.document.get_file_drow(index_to_display) {
+                //     // if so just print it as usual
+                //     self.terminal.queue_print(&render(&row_to_render.content))?;
+                // // however if the index to display is a buffer row
+                // } else if let Some(row_to_render) = self.document.get_buf_drow(index_to_display) {
+                //     // check if we're at the joining index
+                //     if index_to_display == self.document.append_buffer.join_pos.y {
+                //         //trace!("at join index, current row to display: {}", row_to_render.content);
+                //         // in this case we need to split the row's content
+                //         // into that of the file's text and the buffer's
+                //         //let (file_content, buffer_content) = self.document.split_join_row(row_to_render);
+                //         self.terminal.reverse_colors()?;
+                //         self.terminal.queue_print(&render(&buffer_content))?;
+                //         self.terminal.no_reverse_colors()?;
+                //         self.terminal.queue_print(&render(&file_content))?;
+                //     // if it's not the joining row, check if it's empty
+                //     } else if row_to_render.content.is_empty() {
+                //         // in this case we print a space character so
+                //         // the empty row shows up with a highlight in it.
+                //         self.terminal.reverse_colors()?;
+                //         self.terminal.queue_print(" ")?;
+                //         self.terminal.no_reverse_colors()?;
+
+                //     // if not just print the row with inverted colors
+                //     } else {
+                //         self.terminal.reverse_colors()?;
+                //         self.terminal.queue_print(&render(&row_to_render.content))?;
+                //         self.terminal.no_reverse_colors()?;
+                //     }
+                // // if we can't get a row at all just print ~
+                // } else {
+                //     self.terminal.queue_print("~")?;
+                // }
             } else {
                 self.terminal.queue_print("~")?;
             }
@@ -567,6 +646,8 @@ impl Editor {
         ).unwrap_or(None);
         
         if let Some(file_name) = input {
+            self.document.append_newline();
+
             let file_info = if self.config.open_search {
                 Metadata::get_file_info(&file_name, true)
             } else {
@@ -574,13 +655,9 @@ impl Editor {
             };
             let mut document;
 
-            // if file_info.exists {
-                document = Document::open(file_info);
-                Document::wrap_file(&mut document);
-                Document::wrap_buffer(&mut document);
-            // } else {
-            //     document = Document::create(file_info);
-            // }
+            document = Document::open(file_info);
+            Document::wrap_file(&mut document);
+            Document::wrap_buffer(&mut document);
 
             self.document = document;
             
@@ -589,7 +666,7 @@ impl Editor {
             } else {
                 self.mode = Mode::View;
                 // make sure view snaps to end of document
-                self.view_pos.y = self.document.display_rows.len().saturating_sub(1);
+                self.view_pos.y = self.document.display_len().saturating_sub(1);
             }
 
             self.snap_view();

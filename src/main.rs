@@ -72,11 +72,6 @@ use log::{LevelFilter, warn, trace};
 // the append buffer
 
 // NEXT: figure out packaging and distribution.
-// BUG: fucking text wrapping at the end of lines is fucked up if the line gets moved from one term row to the next
-// i need to basically restructure everything so that i can display colors grapheme by grapheme and only color the
-// graphemes that are in the buffer
-// fuck this
-// for now im removing the text highlighting completely until i can fix it properly
 
 // TODO:
 //   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html

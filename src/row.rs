@@ -5,5 +5,14 @@
 pub struct DisplayRow {
     pub content: String,
     pub len: usize,
-    pub is_buffer: bool,
+}
+
+
+impl From<(String, usize)> for DisplayRow {
+    fn from((line, len): (String, usize)) -> Self {
+        DisplayRow {
+            content: line,
+            len,
+        }
+    }
 }
