@@ -1,10 +1,7 @@
-use crate::Editor;
-use crate::Metadata;
-use crate::config::Config;
+use crate::{Editor, Metadata, Config};
+use std::io::{Error, Write, stdin, stdout};
 
-use std::io::Error;
-use std::io::Write;
-use std::io::{stdin, stdout};
+// -----------------
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WELCOME: &str = "\r

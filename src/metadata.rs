@@ -1,15 +1,13 @@
-use std::{
-    path::{
-        Path,
-        PathBuf,
+use {
+    std::{
+        path::{Path, PathBuf},
+        fs::read_dir,
+        env::{current_dir, current_exe},
     },
-    fs::read_dir,
-    env::{
-        current_dir,
-        current_exe,
-    },
+    log::{error, info, trace},
 };
-use log::{error, info, trace};
+
+// -----------------
 
 pub struct Metadata {
     pub current_dir: PathBuf,

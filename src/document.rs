@@ -1,30 +1,18 @@
-use crate::Terminal;
-use crate::Metadata;
-use crate::DisplayRow;
-use crate::AppendBuffer;
-use crate::die::die;
-use crate::editor::Position;
-
-use log::{error, warn, info};
-use unicode_segmentation::UnicodeSegmentation;
-use words_count::WordsCount;
-use std::cmp::Ordering;
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::io::Seek;
-use std::{
-    time::Instant,
-    io::{
-        Error,
-        Write,
-        BufReader,
-        BufWriter,
-    },
-    fs::{
-        rename,
-        File,
-    },
+use crate::{Terminal, Metadata, DisplayRow, AppendBuffer, Position, die};
+use {
+    unicode_segmentation::UnicodeSegmentation,
+    words_count::WordsCount,
+    log::{error,warn,info},
+    std::{
+        cmp::Ordering,
+        time::Instant,
+        io::{Read, Seek, Error, Write, BufReader, BufWriter},
+        fs::{OpenOptions,rename,File},
+    }
 };
+
+// -----------------
+
 pub struct Document {
     pub metadata: Metadata,
     pub content: String,
@@ -158,11 +146,6 @@ impl Document {
     }
 
     pub fn wrap_buffer(&mut self) {
-        // prepend the row we popped off from the file's
-        // display rows to the buffer's content before
-        // wrapping it.
-        // let to_wrap = format!("{}{}", self.append_buffer.join_content, self.append_buffer.buffer);
-
         self.buf_drows.clear();
         self.buf_drows = to_display_rows(
             self.append_buffer.join_pos.x, 
@@ -272,7 +255,7 @@ pub fn render(to_render: &str) -> String {
 }
 
    // wraps a string to display rows
-   pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
+pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
     // get terminal width
     let max_width = Terminal::get_term_size().0;
     // create vector to return

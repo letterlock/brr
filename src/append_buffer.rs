@@ -1,5 +1,7 @@
-use unicode_segmentation::UnicodeSegmentation;
 use crate::Position;
+use unicode_segmentation::UnicodeSegmentation;
+
+// -----------------
 
 #[derive(Default)]
 pub struct AppendBuffer {

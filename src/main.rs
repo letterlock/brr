@@ -13,33 +13,28 @@
 )]
 
 mod die;
+mod config;
+mod init;
 mod terminal;
 mod editor;
 mod metadata;
 mod document;
 mod append_buffer;
 mod row;
-mod init;
-mod config;
 
 use die::die;
-use log::error;
+use config::Config;
+use init::Init;
 use terminal::Terminal;
-use editor::{
-    Editor,
-    Position
-};
+use editor::{Editor, Position};
 use metadata::{Metadata, get_conf_or_log_path};
-use document::{
-    Document,
-    render,
-};
+use document::{Document, render};
 use append_buffer::AppendBuffer;
 use row::DisplayRow;
-use init::Init;
-use config::Config;
 
-use log::{LevelFilter, warn, trace};
+use log::{LevelFilter, error, warn, trace};
+
+// -----------------
 
 // note on converting usize to u16:
 // in reality usize is unneccesary for brr because a document is
@@ -62,9 +57,6 @@ use log::{LevelFilter, warn, trace};
 //   65 * 25 = 1625
 //   65536 / 1625 = 40.33
 
-// brr saves - after 5 seconds of inactivity or every five
-// words (as you finish the sixth word)
-
 // there's no official way to count words (and even counting 
 // characters is more complex than you think) so brr's word
 // and character counts should be used as guidelines
@@ -74,13 +66,12 @@ use log::{LevelFilter, warn, trace};
 // NEXT: figure out packaging and distribution.
 
 // TODO:
-//   - !!! optimise document.rs https://doc.rust-lang.org/stable/rust-by-example/std_misc/file/read_lines.html
-//   - !!! check sizes (usize, u16) to avoid overflow
-//   - !!! overuse of self. ?
 //   - !!! tidy up code
 //   - !!! fix errors in editor.rs::refresh_screen()
+//   -  !! fix truncation in message bar and status bar
 //   -  !! config file description
 //   -  !! add code comments for clarity
+//   -   ! https://doc.rust-lang.org/stable/rust-by-example/fn/closures.html
 // MAYBE:
 //   -     don't wrap spaces along with words
 //   -     add search function to viewing mode

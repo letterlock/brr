@@ -1,34 +1,16 @@
-use log::error;
-use log::trace;
-// use log::trace;
-
-use crate::die;
-use crate::Terminal;
-use crate::Document;
-use crate::render;
-use crate::Metadata;
-use crate::Config;
-
+use crate::{die, Terminal, Document, render, Metadata, Config};
 use {
     std::{
         io::Error,
-        time::{
-            Duration,
-            Instant,
-        },
+        time::{Duration, Instant},
         env::consts::OS,
         cmp::PartialEq,
     },
-    crossterm::event::{
-        Event,
-        read,
-        poll,
-        KeyEvent,
-        KeyEventKind,
-        KeyModifiers,
-        KeyCode,
-    },
+    crossterm::event::{Event, read, poll, KeyEvent, KeyEventKind, KeyModifiers, KeyCode},
+    log::{error, trace},
 };
+
+// -----------------
 
 const STANDARD_MESSAGE: &str = "help: press ctrl+h for keybinds";
 
@@ -481,17 +463,6 @@ impl Editor {
                         self.terminal.queue_print("~")?;
                     },
                 };
-                // // if there is a file display row at index
-                // if let Some(row_to_render) = self.document.get_file_drow(index_to_display) {
-                //     // print it
-                // // otherwise if there is a buffer display row at index
-                // } else if let Some(row_to_render) = self.document.get_buf_drow(index_to_display) {
-                //     // print it
-                //     self.terminal.queue_print(&render(&row_to_render.content))?;
-                // } else {
-                //     // otherwise just print ~
-                //     self.terminal.queue_print("~")?;
-                // }
             // draw rows in edit/prompt mode
             // by checking if ((view position's y + current term row) - editing offset) 
             // does not overflow (read: would not become less than zero), we can make sure
@@ -522,41 +493,6 @@ impl Editor {
                         self.terminal.queue_print("~")?;
                     },
                 };
-                // // to render the display rows of both the file and the append buffer:
-                // // start by checking if the index to display is just a regular file row
-                // if let Some(row_to_render) = self.document.get_file_drow(index_to_display) {
-                //     // if so just print it as usual
-                //     self.terminal.queue_print(&render(&row_to_render.content))?;
-                // // however if the index to display is a buffer row
-                // } else if let Some(row_to_render) = self.document.get_buf_drow(index_to_display) {
-                //     // check if we're at the joining index
-                //     if index_to_display == self.document.append_buffer.join_pos.y {
-                //         //trace!("at join index, current row to display: {}", row_to_render.content);
-                //         // in this case we need to split the row's content
-                //         // into that of the file's text and the buffer's
-                //         //let (file_content, buffer_content) = self.document.split_join_row(row_to_render);
-                //         self.terminal.reverse_colors()?;
-                //         self.terminal.queue_print(&render(&buffer_content))?;
-                //         self.terminal.no_reverse_colors()?;
-                //         self.terminal.queue_print(&render(&file_content))?;
-                //     // if it's not the joining row, check if it's empty
-                //     } else if row_to_render.content.is_empty() {
-                //         // in this case we print a space character so
-                //         // the empty row shows up with a highlight in it.
-                //         self.terminal.reverse_colors()?;
-                //         self.terminal.queue_print(" ")?;
-                //         self.terminal.no_reverse_colors()?;
-
-                //     // if not just print the row with inverted colors
-                //     } else {
-                //         self.terminal.reverse_colors()?;
-                //         self.terminal.queue_print(&render(&row_to_render.content))?;
-                //         self.terminal.no_reverse_colors()?;
-                //     }
-                // // if we can't get a row at all just print ~
-                // } else {
-                //     self.terminal.queue_print("~")?;
-                // }
             } else {
                 self.terminal.queue_print("~")?;
             }
@@ -678,7 +614,7 @@ impl Editor {
 
     // BAD: this whole closures and callbacks thing is a bit beyond me
     // so for now i'm just going to hope nothing breaks here
-    // too bad! https://doc.rust-lang.org/stable/rust-by-example/fn/closures.html
+    // too bad!
     // BAD: when writing in the prompt, a very long input will cause
     // the cursor to move out of the screen or some other such funkyness
     fn prompt<C>(&mut self, prompt: &str, start_x: usize, mut callback: C) -> Result<Option<String>, Error> 

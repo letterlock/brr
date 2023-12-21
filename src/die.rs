@@ -1,14 +1,14 @@
-use std::io::Error;
-use std::io::stdout;
-
-use crossterm::cursor::SetCursorStyle;
-use crossterm::{terminal::{
-    disable_raw_mode,
-    LeaveAlternateScreen,
+use {
+    std::io::{Error, stdout},
+    crossterm::{
+        cursor::SetCursorStyle,
+        terminal::{disable_raw_mode, LeaveAlternateScreen},
+        ExecutableCommand,
     },
-    ExecutableCommand,
+    log::error,
 };
-use log::error;
+
+// -----------------
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn die(error_msg: Error) {

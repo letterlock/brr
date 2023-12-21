@@ -1,43 +1,22 @@
-use crate::{
-    Position, 
-    die,
+use crate::{Position, die,};
+use {
+    std::io::{
+        Write,
+        Stdout,
+        stdout,
+        Error,
+    },
+    crossterm::{
+        terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, size, LeaveAlternateScreen, EnterAlternateScreen},
+        cursor::{MoveToNextLine, MoveTo, Hide, Show, SetCursorStyle},
+        style::{Print, SetAttribute, Attribute::{Reverse, NoReverse}},
+        ExecutableCommand, 
+        QueueableCommand,
+    },
+    log::error,
 };
 
-use crossterm::{
-    terminal::{
-        disable_raw_mode,
-        enable_raw_mode,
-        Clear,
-        ClearType,
-        size, 
-        LeaveAlternateScreen, 
-        EnterAlternateScreen,
-    },
-    cursor::{
-        MoveToNextLine,
-        MoveTo,
-        Hide,
-        Show,
-        SetCursorStyle,
-    },
-    style::{
-        Print,
-        SetAttribute,
-        Attribute::{
-            Reverse,
-            NoReverse,
-        },
-    },
-    ExecutableCommand, 
-    QueueableCommand,
-};
-use log::error;
-use std::io::{
-    Write,
-    Stdout,
-    stdout,
-    Error,
-};
+// -----------------
 
 pub struct Terminal {
     pub stdout: Stdout,

@@ -1,13 +1,14 @@
 use crate::get_conf_or_log_path;
-
-use std::fs::File;
-use std::io::{
-    BufReader, 
-    BufRead,
+use {
+    std::{
+        io::{BufReader, BufRead},
+        fs::File,
+    },
+    crossterm::cursor::SetCursorStyle,
+    log::{error, warn},
 };
-use crossterm::cursor::SetCursorStyle;
 
-use log::{error, warn};
+// -----------------
 
 pub struct Config {
     pub start_edit: bool, // true = edit, false = view
