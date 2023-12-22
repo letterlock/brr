@@ -1,13 +1,15 @@
 [package]
 name = "brr"
+authors = ["maxwell letterlock"]
 version = "1.0.0"
 edition = "2021"
+readme = "README.md"
+license = "GPL-3.0-or-later"
 description = "the perfunctory prose proliferator"
 homepage = "https://github.com/letterlock/brr"
 repository = "https://github.com/letterlock/brr"
 keywords = ["tui", "text-editor"]
-readme = "README.md"
-license = "GPL-3.0-or-later"
+categories = ["command-line-utilities", "command-line-interface"]
 
 
 [dependencies]
