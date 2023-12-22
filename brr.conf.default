@@ -1,8 +1,8 @@
 # brr config file
 # this is the default config file for brr, you can
 # copy it and change it to your liking, just make
-# sure it's called brr.conf and in the correct
-# folder (todo)
+# sure it's called brr.conf and in the same folder
+# as brr's executable.
 
 # start-edit
 #   defines if brr should start in edit mode. false

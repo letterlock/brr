@@ -5,17 +5,16 @@ use std::io::{Error, Write, stdin, stdout};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WELCOME: &str = "\r
-welcome to\r
-  ______                \r
-  ___  /________________\r
-  __  __ -_  ___/_  ___/\r
-  _  /_/ /  /   _  /    \r
-  /_.___//_/    /_/     \r
-                        \r
+  welcome to\r
+      ▀██               \r
+     ▀ ██ ▄▄▄           \r
+    ▀▀ ██▀  ██ █▄▀▀ █▄▀▀\r
+   ▀▀▀ ██    █ █    █   \r
+  ▀▀▀▀ ▀█▄▄▄▀  ▀    ▀   \r
     the perfunctory prose proliferator\r
 \r
 please specify a file name, type 'help' for help, or press ctrl+c to exit.";
-const PROMPT: &str = "> ";
+const PROMPT: &str = " > ";
 // BAD: this might suggest that the user should type brr again if they use the help prompt
 const HELP: &str = "brr help:\r
   -> usage: brr [OPTIONS/COMMANDS] [FILENAME]\r

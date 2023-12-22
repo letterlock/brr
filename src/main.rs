@@ -66,8 +66,8 @@ use log::{LevelFilter, error, warn, trace};
 // NEXT: figure out packaging and distribution.
 
 // TODO:
-//   - !!! tidy up code
-//   - !!! fix errors in editor.rs::refresh_screen()
+//   - !!! fix error handling in editor.rs::refresh_screen()
+//   - !!! on linux systems, brr should look in ~/.config/brr for its config file
 //   -  !! fix truncation in message bar and status bar
 //   -  !! config file description
 //   -  !! add code comments for clarity

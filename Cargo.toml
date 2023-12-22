@@ -5,6 +5,7 @@ edition = "2021"
 description = "the perfunctory prose proliferator"
 homepage = "https://github.com/letterlock/brr"
 repository = "https://github.com/letterlock/brr"
+keywords = ["tui", "text-editor"]
 readme = "README.md"
 license = "GPL-3.0-or-later"
 
@@ -15,3 +16,6 @@ unicode-segmentation = "1.10.1"
 words-count = "0.1.6"
 log = "0.4.20"
 simple-logging = "2.0.2"
+
+[build-dependencies]
+winres = "0.1"
