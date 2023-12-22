@@ -42,7 +42,7 @@ if you're nervous about it, that's probably good! it's smart not to trust some r
 if you want to compile from source, the easiest way is to use the native rust package manager cargo. you can install cargo with [this guide](https://doc.rust-lang.org/stable/cargo/getting-started/installation.html).  
 after you have cargo (and therefore the rust compiler), you can just run the following in a terminal:
 ```
-$ cargo install brr
+$ cargo install brr-editor
 ```
 to install.
 
