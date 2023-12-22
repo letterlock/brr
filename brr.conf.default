@@ -2,7 +2,9 @@
 # this is the default config file for brr, you can
 # copy it and change it to your liking, just make
 # sure it's called brr.conf and in the same folder
-# as brr's executable.
+# as brr's executable. if you're on linux, you can
+# also put this file in $XDG_CONFIG_HOME/brr (this
+# defaults to ~/.config/brr)
 
 # start-edit
 #   defines if brr should start in edit mode. false

@@ -2,12 +2,12 @@ use crate::{Terminal, Metadata, DisplayRow, AppendBuffer, Position, die};
 use {
     unicode_segmentation::UnicodeSegmentation,
     words_count::WordsCount,
-    log::{error,warn,info},
+    log::{error, warn, info, trace},
     std::{
         cmp::Ordering,
         time::Instant,
         io::{Read, Seek, Error, Write, BufReader, BufWriter},
-        fs::{OpenOptions,rename,File},
+        fs::{OpenOptions, rename, File},
     }
 };
 
@@ -55,6 +55,11 @@ impl Document {
 
         if content.ends_with('\n') {
             content.pop();
+            // on windows, some files will end with \r\n, so pop
+            // that bad boy off too.
+            if content.ends_with('\r') {
+                content.pop();
+            }
         }
 
         let start_count = count.clone();
@@ -126,6 +131,7 @@ impl Document {
         // one of them. so we add an extra here and inform the 
         // append buffer accordingly
         if self.content.ends_with('\n') {
+            trace!("newline at end of file");
             self.append_buffer.join_pos = Position {
                 x: 0,
                 y: last_drow_index.saturating_add(1),
@@ -156,6 +162,7 @@ impl Document {
         // add an extra display row so that it doesn't get
         // cut off from running lines() in to_display_rows()
         if self.append_buffer.buffer.ends_with('\n') {
+            trace!("newline at end of buffer");
             self.buf_drows.push(DisplayRow::from((String::new(), 0)));
         };
     }
@@ -254,7 +261,7 @@ pub fn render(to_render: &str) -> String {
     rendered
 }
 
-   // wraps a string to display rows
+// wraps a string to display rows
 pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
     // get terminal width
     let max_width = Terminal::get_term_size().0;

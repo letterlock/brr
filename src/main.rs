@@ -32,7 +32,10 @@ use document::{Document, render};
 use append_buffer::AppendBuffer;
 use row::DisplayRow;
 
-use log::{LevelFilter, error, warn, trace};
+use {
+    log::{LevelFilter, error, warn, info},
+    simple_logging::log_to_file,
+};
 
 // -----------------
 
@@ -67,6 +70,7 @@ use log::{LevelFilter, error, warn, trace};
 
 // TODO:
 //   - !!! fix error handling in editor.rs::refresh_screen()
+//   - !!! look into if \r\n vs \n is going to cause platform specific problems on windows
 //   - !!! on linux systems, brr should look in ~/.config/brr for its config file
 //   -  !! fix truncation in message bar and status bar
 //   -  !! config file description
@@ -86,11 +90,9 @@ fn main() {
     let args = std::env::args().nth(1);
 
     if let Some(log_path) = get_conf_or_log_path(false) {
-        simple_logging::log_to_file(&log_path, LevelFilter::Trace).unwrap();
+        log_to_file(&log_path, LevelFilter::Info).unwrap();
         
-        if let Some(path_string) = log_path.to_str() {
-            trace!("[main.rs]: using log path: {path_string}");
-        }
+        info!("using log path: {}", log_path.display());
     } else {
         panic!("cannot find executable. do you have permission to access the folder containing brr?")
     };

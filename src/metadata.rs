@@ -1,10 +1,10 @@
 use {
     std::{
         path::{Path, PathBuf},
-        fs::read_dir,
-        env::{current_dir, current_exe},
+        fs::{read_dir, create_dir_all},
+        env::{current_dir, current_exe, var, consts::OS},
     },
-    log::{error, info, trace},
+    log::{error, info, trace, warn},
 };
 
 // -----------------
@@ -162,6 +162,70 @@ impl Metadata {
 // config path or false for log path.
 #[allow(clippy::needless_return)] // seems to be a false positive
 pub fn get_conf_or_log_path(config: bool) -> Option<PathBuf> {
+    let config_key = "XDG_CONFIG_HOME";
+    let state_key = "XDG_STATE_HOME";
+    let home_key = "HOME";
+
+    if config && OS == "linux" {
+        if let Ok(config_dir) = var(config_key) {
+            trace!("found $XDG_CONFIG_HOME: {config_dir}");
+            let mut config_path = PathBuf::from(config_dir);
+            config_path.push("brr/brr.conf");
+            info!("using config path: {}", config_path.display());
+            return Some(config_path);
+        };
+        warn!("$XDG_CONFIG_HOME environment variable not set or not valid unicode. using $HOME/.config instead.");
+        if let Ok (home_dir) = var(home_key) {
+            trace!("found $HOME: {home_dir}");
+            let mut config_path = PathBuf::from(home_dir);
+            config_path.push(".config/brr/brr.conf");
+            info!("using config path: {}", config_path.display());
+            return Some(config_path);
+        };
+        warn!("$HOME environment variable not set or not valid unicode. checking executable path instead.");
+    } else if OS == "linux" {
+        if let Ok(state_dir) = var(state_key) {
+            trace!("found $XDG_STATE_HOME: {state_dir}");
+            let mut log_path = PathBuf::from(state_dir);
+            log_path.push(PathBuf::from("brr"));
+            
+            match create_dir_all(&log_path) {
+                Ok(()) => {
+                    log_path.push("brr.log");
+                    info!("using log path: {}", log_path.display());
+                    return Some(log_path);
+                },
+                Err(error_msg) => {
+                    error!("[metadata.rs]: {error_msg} - could not create log directory {}. using executable path instead.", log_path.display());
+                },
+            };
+        } else {
+            warn!("$XDG_STATE_HOME environment variable not set or not valid unicode. using $HOME/.local/state instead.");
+        };
+        if let Ok (home_dir) = var(home_key) {
+            trace!("found $HOME: {home_dir}");
+            let mut log_path = PathBuf::from(home_dir);
+            log_path.push(".local/state/brr");
+
+            match create_dir_all(&log_path) {
+                Ok(()) => {
+                    log_path.push("brr.log");
+                    info!("using log path: {}", log_path.display());
+                    return Some(log_path);
+                },
+                Err(error_msg) => {
+                    error!("[metadata.rs]: {error_msg} - could not create log directory {}. using executable path instead.", log_path.display());
+                },
+            };
+        } else {
+            warn!("$HOME environment variable not set or not valid unicode. using executable path instead.");
+        };
+    }
+    current_exe_path(config)
+}
+
+#[allow(clippy::needless_return)] // seems to be a false positive
+fn current_exe_path(config: bool) -> Option<PathBuf> {
     match current_exe() {
         Ok(exe_path) => {
             if let Some(parent) = exe_path.parent() {
@@ -169,10 +233,8 @@ pub fn get_conf_or_log_path(config: bool) -> Option<PathBuf> {
                 
                 if config {
                     path.push(PathBuf::from("brr.conf"));
-                
-                    if let Some(path_string) = path.to_str() {
-                        trace!("[metadata.rs]: using config path: {path_string}");
-                    }
+
+                    info!("using config path: {}", path.display());
                     return Some(path);
                 };
                 path.push(PathBuf::from("brr.log"));
