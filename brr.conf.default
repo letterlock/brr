@@ -75,12 +75,3 @@ save-time = 5
 # options: 0-9. 0 or 1 to disable.
 # default: save-words = 6
 save-words = 6
-
-
-        style if style.contains("default") => Some(SetCursorStyle::DefaultUserShape),
-        style if style.contains("blinking-block") => Some(SetCursorStyle::BlinkingBlock),
-        style if style.contains("steady-block") => Some(SetCursorStyle::SteadyBlock),
-        style if style.contains("blinking-underscore") => Some(SetCursorStyle::BlinkingUnderScore),
-        style if style.contains("steady-underscore") => Some(SetCursorStyle::SteadyUnderScore),
-        style if style.contains("blinking-bar") => Some(SetCursorStyle::BlinkingBar),
-        style if style.contains("steady-bar") => Some(SetCursorStyle::SteadyBar),
