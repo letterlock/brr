@@ -63,10 +63,10 @@ if you want to take a break from writing and look over what you've written, you 
 
 ## configuration  
 brr uses a simple plaintext config file that should be fairly straightforward to use, just open it in your favourite (actually functional) text editor and change the values after the equals symbols! the 'brr.conf.default' file contains all the default values and syntax, as well as some explanations for the various options.  
-on opening, brr will check the directory containing its executable for a 'brr.conf' file. if you're on linux, brr will first check "$XDG_CONFIG_HOME/brr" (if this is unset, it will also just check ~/.config/brr), before checking its own directory.  
+on opening, brr will check the directory containing its executable for a 'brr.conf' file. if you're on linux, brr will first check "`$XDG_CONFIG_HOME/brr`" (if this is unset, it will also just check `~/.config/brr`), before checking its own directory.  
 
 ## logging and errors
-if you're on windows, brr reports all errors through a log file placed in the same directory as the executable. if you're on linux, brr will first try to find (and create, if absent) "$XDG_STATE_HOME/brr". if $XDG_STATE_HOME is unset, it will default to "~/.local/state/brr". if it can't create that, it will just try to put the log in the directory containing its executable.  
+if you're on windows, brr reports all errors through a log file placed in the same directory as the executable. if you're on linux, brr will first try to find (and create, if absent) "`$XDG_STATE_HOME/brr`". if `$XDG_STATE_HOME` is unset, it will default to "`~/.local/state/brr`". if it can't create that, it will just try to put the log in the directory containing its executable.  
 if brr encounters an unrecoverable error, it will panic and die, leaving you with the error that killed it. if you opened the executable from outside of a terminal (e.g. you just ran the executable), the terminal will close as the process exits, so you'll have to check the log for what happened.  
 if you do encounter an error that kills brr, please report it as an issue, include your log file, and tell me what you were doing when brr was die.  
 

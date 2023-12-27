@@ -48,6 +48,13 @@ enum Mode {
     Prompt,
 }
 
+#[derive(PartialEq, Clone, Copy)]
+pub enum SaveType {
+    Words,
+    Time,
+    Manual,
+}
+
 struct Message {
     text: String,
     time: Instant,
@@ -223,7 +230,7 @@ impl Editor {
                     };
                     self.should_quit = true;
                 },
-                (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0),
+                (KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0, SaveType::Manual),
                 (KeyModifiers::CONTROL, KeyCode::Char('o')) => self.open(),
                 (KeyModifiers::CONTROL, KeyCode::Char('h')) => {
                     self.message = 
@@ -238,11 +245,13 @@ impl Editor {
                 },
                 (_, KeyCode::Char(pressed_char)) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count == self.config.save_words as usize {
-                        self.save(self.config.save_words);
+                    if self.document.append_buffer.word_count == self.config.save_words as usize
+                    && self.config.save_words > 1 {
+                        self.save(self.config.save_words, SaveType::Words);
                     } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0 {
+                        self.save(0, SaveType::Time);
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -251,9 +260,9 @@ impl Editor {
                 (_, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
                     if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
-                        self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0 {
+                        self.save(0, SaveType::Time);
                     }
                     if (self.view_pos.x > 0 
                     || self.view_pos.y > 0)
@@ -265,11 +274,13 @@ impl Editor {
                 },
                 (_, KeyCode::Enter) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count == self.config.save_words as usize {
-                        self.save(self.config.save_words);
+                    if self.document.append_buffer.word_count == self.config.save_words as usize 
+                    && self.config.save_words > 1 {
+                        self.save(self.config.save_words, SaveType::Words);
                     } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0 {
+                        self.save(0, SaveType::Time);
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -326,7 +337,7 @@ impl Editor {
                     };
                     self.should_quit = true;
                 },
-                (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0),
+                (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('s')) => self.save(0, SaveType::Manual),
                 (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('o')) => self.open(),
                 (KeyEventKind::Press, KeyModifiers::CONTROL, KeyCode::Char('h')) => {
                     self.message = 
@@ -341,11 +352,13 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Char(pressed_char)) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count == self.config.save_words as usize {
-                        self.save(self.config.save_words);
+                    if self.document.append_buffer.word_count == self.config.save_words as usize 
+                    && self.config.save_words > 1 {
+                        self.save(self.config.save_words, SaveType::Words);
                     } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0 {
+                        self.save(0, SaveType::Time);
                     }
                     self.document.insert(pressed_char);
                     self.snap_view();
@@ -354,8 +367,9 @@ impl Editor {
                 (KeyEventKind::Press, _, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
                     if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0 {
+                        self.save(0, SaveType::Time);
                         self.message = Message::from("sorry, five seconds passed! file saved.".to_string());
                     }
                     if (self.view_pos.x > 0 
@@ -368,11 +382,13 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Enter) if self.mode == Mode::Edit => {
                     self.document.append_buffer.count_words();
-                    if self.document.append_buffer.word_count == self.config.save_words as usize {
-                        self.save(self.config.save_words);
+                    if self.document.append_buffer.word_count == self.config.save_words as usize 
+                    && self.config.save_words > 1 {
+                        self.save(self.config.save_words, SaveType::Words);
                     } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
-                    && !self.document.append_buffer.buffer.is_empty() {
-                        self.save(0);
+                    && !self.document.append_buffer.buffer.is_empty() 
+                    && self.config.save_time > 0{
+                        self.save(0, SaveType::Time);
                     }
                     self.document.insert('\n');
                     self.snap_view();
@@ -554,24 +570,15 @@ impl Editor {
         Ok(())
     }
 
-    pub fn save(&mut self, words: u8) {
-        if words > 1 {
-            match self.document.save(words) {
-                Ok(()) => (),
-                Err(error_msg) => {
-                    self.message = Message::from("error writing file. see log for details.".to_string());
-                    error!("[document.rs -> editor.rs]: {error_msg} - could not save file.");
-                },
-            };
-        } else {
-            match self.document.save(words) {
-                Ok(()) => self.message = Message::from("file saved successfully.".to_string()),
-                Err(error_msg) => {
-                    self.message = Message::from("error writing file. see log for details.".to_string());
-                    error!("[document.rs -> editor.rs]: {error_msg} - could not save file.");
-                },
-            };
-        };
+    pub fn save(&mut self, words: u8, save_type: SaveType) {
+        match self.document.save(words, save_type) {
+            Ok(()) if save_type == SaveType::Manual => self.message = Message::from("file saved successfully.".to_string()),
+            Ok(()) => (),
+            Err(error_msg) => {
+                self.message = Message::from("error writing file. see log for details.".to_string());
+                error!("[document.rs -> editor.rs]: {error_msg} - could not save file.");
+            },
+        }
     }
 
     pub fn open(&mut self) {

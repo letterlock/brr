@@ -26,7 +26,7 @@ use die::die;
 use config::Config;
 use init::Init;
 use terminal::Terminal;
-use editor::{Editor, Position};
+use editor::{Editor, Position, SaveType};
 use metadata::{Metadata, get_conf_or_log_path};
 use document::{Document, render};
 use append_buffer::AppendBuffer;
@@ -66,9 +66,9 @@ use {
 // also brr doesn't currently count words or characters in
 // the append buffer
 
-// NEXT: figure out packaging and distribution.
-
 // TODO:
+//   - !!! clean up save type detection in editor.rs + document.rs
+//   - !!! look into word detection code to see if i can't make it work more intuitively
 //   - !!! fix error handling in editor.rs::refresh_screen()
 //   - !!! look into if \r\n vs \n is going to cause platform specific problems on windows
 //   - !!! on linux systems, brr should look in ~/.config/brr for its config file

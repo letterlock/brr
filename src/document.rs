@@ -1,4 +1,4 @@
-use crate::{Terminal, Metadata, DisplayRow, AppendBuffer, Position, die};
+use crate::{Terminal, Metadata, DisplayRow, AppendBuffer, Position, die, SaveType};
 use {
     unicode_segmentation::UnicodeSegmentation,
     words_count::WordsCount,
@@ -76,7 +76,7 @@ impl Document {
         }
     }
 
-    pub fn save(&mut self, words: u8) -> Result<(), Error> {
+    pub fn save(&mut self, words: u8, save_type: SaveType) -> Result<(), Error> {
         let mut tmp_path = self.metadata.path.clone();
         tmp_path.set_extension("tmp");
         info!(
@@ -88,7 +88,8 @@ impl Document {
         // words here is set in the config file and
         // refers to how many words brr should save
         // as they're written
-        if words > 1 {
+        if save_type == SaveType::Words 
+        && words > 1 {
             if let Some((split_at_index, ..)) = self.append_buffer.buffer
             .unicode_word_indices()
             .nth(words.saturating_sub(1) as usize) {
@@ -101,7 +102,7 @@ impl Document {
         } else if !self.append_buffer.buffer.is_empty() {
             self.content.push_str(&self.append_buffer.buffer);
             self.append_buffer.buffer.clear();
-        };
+        }
 
         self.count = words_count::count(&self.content);
         

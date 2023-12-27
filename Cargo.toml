@@ -1,7 +1,7 @@
 [package]
 name = "brr-editor"
 authors = ["maxwell letterlock"]
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -21,3 +21,6 @@ simple-logging = "2.0.2"
 
 [build-dependencies]
 winres = "0.1"
+
+[profile.release]
+strip = true
