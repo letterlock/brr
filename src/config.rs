@@ -10,10 +10,15 @@ use {
 
 // -----------------
 
+// not a state machine, bools represent individual config values, and need to be
+// accessed individually later, if i were to refactor this into enums with variants,
+// i would need just as many enums as i have bools in the struct.
+#[allow(clippy::struct_excessive_bools)] 
 pub struct Config {
     pub start_edit: bool, // true = edit, false = view
     pub open_search: bool,
     pub count_on_quit: bool,
+    pub line_numbers: bool,
     pub quit_times: u8,
     pub save_time: u8,
     pub save_words: u8,
@@ -26,6 +31,7 @@ impl Default for Config {
             start_edit: true,
             open_search: true,
             count_on_quit: true,
+            line_numbers: true,
             quit_times: 2,
             save_time: 5,
             save_words: 6,
@@ -35,9 +41,6 @@ impl Default for Config {
 }
 
 // BAD: feels like there's a more concise way to do this.
-// TODO: if the config file is openable and readable, but the individual
-// options are mangled somehow, the user should be informed without having
-// to open the log file.
 #[allow(
     clippy::cast_possible_truncation, // truncating these values shouldn't matter.
     clippy::redundant_closure_for_method_calls, // this seems to be a false positive.
@@ -54,6 +57,7 @@ impl Config {
                     let mut start_edit = true;
                     let mut open_search = true;
                     let mut count_on_quit = true;
+                    let mut line_numbers = true;
                     let mut quit_times = 2;
                     let mut save_time = 5;
                     let mut save_words = 6;
@@ -89,6 +93,16 @@ impl Config {
                                         count_on_quit = true;
                                     } else {
                                         error!("[config.rs]: invalid count-on-quit value at line {}. using default.", line_index.saturating_add(1));
+                                    };
+                                    continue
+                                };
+                                if config_line.contains("line-numbers = ") {
+                                    if config_line.contains("false") {
+                                        line_numbers = false;
+                                    } else if config_line.contains("true") {
+                                        line_numbers = true;
+                                    } else {
+                                        error!("[config.rs]: invalid line-numbers value at line {}. using default.", line_index.saturating_add(1));
                                     };
                                     continue
                                 };
@@ -145,6 +159,7 @@ impl Config {
                         start_edit,
                         open_search,
                         count_on_quit,
+                        line_numbers,
                         quit_times,
                         save_time,
                         save_words,

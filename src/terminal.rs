@@ -35,6 +35,11 @@ impl Terminal {
         }
     }
 
+    // casting the term size here shouldn't be an issue as it's
+    // (at least with the terminals of today) very unlikely for a
+    // terminal to get big enough to cause issues. the terminal
+    // would have to have more than 65536 (max of u16) columns or 
+    // rows before things got weird.
     pub fn get_term_size() -> (usize, usize) {
         match size() {
             Ok(size) => (size.0 as usize, size.1 as usize),
@@ -93,6 +98,13 @@ impl Terminal {
 
     pub fn queue_print(&mut self, to_print: &str) -> Result<(), Error> {
         self.stdout.queue(Print(to_print))?;
+        Ok(())
+    }
+
+    pub fn queue_print_reversed(&mut self, to_print: &str) -> Result<(), Error> {
+        self.stdout.queue(SetAttribute(Reverse))?;
+        self.stdout.queue(Print(to_print))?;
+        self.stdout.queue(SetAttribute(NoReverse))?;
         Ok(())
     }
 

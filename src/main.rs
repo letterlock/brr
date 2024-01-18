@@ -39,48 +39,44 @@ use {
 
 // -----------------
 
-// note on converting usize to u16:
-// in reality usize is unneccesary for brr because a document is
-// very unlikely to pass 65536 lines (the maximum value of u16)
-// by my calculations, to surpass 65k lines, a document would
-// have to be (conservatively) over 2000 a4 pages long in standard 
-// manuscript format: 
-//   https://en.wikipedia.org/wiki/Standard_manuscript_format
-// likewise -- a single line would have to be about 40 pages long
-// before it was truncated due to being longer than 65536 chars
-// calculations:
-//   page size:      a4
-//   font size:      12pt monospaced
-//   line spacing:   double
-//   chars per line: 65
-//   lines per page: 25
-// max lines in document as pages:
-//   65536 / 25 = 2621.44
-// max chars in line as pages:
-//   65 * 25 = 1625
-//   65536 / 1625 = 40.33
-
 // there's no official way to count words (and even counting 
 // characters is more complex than you think) so brr's word
 // and character counts should be used as guidelines
 // also brr doesn't currently count words or characters in
 // the append buffer
 
+// RE: mouse events
+// as far as i can tell, there's no easy way to capture mouse
+// events without causing a whole bunch of unneccessary loops
+// of brr's editor.rs->run() function, which i just don't like.
+// it causes the cursor to flicker when the mouse is moved
+// and i find that distracting and ugly. because it's not a
+// feature that feels very important to brr's utility, i won't
+// be implementing it at this time.
+// IDEA: maybe i could try my hand at asyncronous handling of
+// mouse events, so that they run separate from the program's
+// main loop and only actually affect something when they would
+// be needed to?
+
+// BUG: singular words that are longer than the entire width of the terminal break
+// the line wrapping and display. i'm not going to fix this right now because it's
+// a fairly unreachable edge case, but 
+
 // TODO:
 //   - !!! clean up save type detection in editor.rs + document.rs
 //   - !!! look into word detection code to see if i can't make it work more intuitively
 //   - !!! fix error handling in editor.rs::refresh_screen()
-//   - !!! look into if \r\n vs \n is going to cause platform specific problems on windows
-//   - !!! on linux systems, brr should look in ~/.config/brr for its config file
+//   -  !! apparently mac uses only \r for newlines, this will probably cause issues
 //   -  !! fix truncation in message bar and status bar
-//   -  !! config file description
 //   -  !! add code comments for clarity
 //   -   ! https://doc.rust-lang.org/stable/rust-by-example/fn/closures.html
+// TODO: if the config file is openable and readable, but the individual
+// options are mangled somehow, the user should be informed without having
+// to open the log file.
 // MAYBE:
 //   -     don't wrap spaces along with words
 //   -     add search function to viewing mode
 //   -     scrollbar
-//   -     mouse scrolling in view mode
 //   -     line numbers
 //   -     handle wide characters https://github.com/rhysd/kiro-editor
 //   -     truncate absolute paths?

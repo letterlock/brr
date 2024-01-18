@@ -8,6 +8,7 @@ use {
         time::Instant,
         io::{Read, Seek, Error, Write, BufReader, BufWriter},
         fs::{OpenOptions, rename, File},
+        iter::successors,
     }
 };
 
@@ -16,8 +17,10 @@ use {
 pub struct Document {
     pub metadata: Metadata,
     pub content: String,
-    pub file_drows: Vec<DisplayRow>,
+    pub amt_lines: usize,
+    pub line_no_digits: usize,
     pub append_buffer: AppendBuffer,
+    pub file_drows: Vec<DisplayRow>,
     pub buf_drows: Vec<DisplayRow>,
     pub last_edit: Instant,
     pub count: WordsCount,
@@ -63,12 +66,22 @@ impl Document {
         }
 
         let start_count = count.clone();
+        let amt_lines = content.lines().count();
+
+        // using successors() to compute the number of digits
+        // in the number of lines in the file.
+        let line_no_digits = successors(
+            Some(amt_lines), 
+            |num| Some(num / 10).filter(|u| *u > 0)
+        ).count();
 
         Self { 
             metadata,
             content: content.to_string(),
-            file_drows: Vec::new(),
+            amt_lines,
+            line_no_digits,
             append_buffer: AppendBuffer::default(),
+            file_drows: Vec::new(),
             buf_drows: Vec::new(),
             last_edit: Instant::now(),
             count,
@@ -99,7 +112,7 @@ impl Document {
                 self.content.push_str(to_save);
                 self.append_buffer.buffer = remainder.to_string();
             };
-        } else if !self.append_buffer.buffer.is_empty() {
+        } else if self.append_buffer.is_dirty() {
             self.content.push_str(&self.append_buffer.buffer);
             self.append_buffer.buffer.clear();
         }
@@ -122,8 +135,18 @@ impl Document {
     // every keypress, but it still happens often enough that 
     // i would like to find a better solution
     pub fn wrap_file(&mut self) {
+        // get width to wrap at from terminal width - gutter_size
+        // also add 1 to the gutter size to make room for a space
+        // between the gutter and the row.
+        let max_width = Terminal::get_term_size().0.saturating_sub(self.line_no_digits.saturating_add(1));
+        
         self.file_drows.clear();
-        self.file_drows = to_display_rows(0,&self.content);
+        self.file_drows = to_display_rows(
+            0,
+            1,
+            &self.content,
+            max_width,
+        );
 
         let last_drow_index = self.file_drows.len().saturating_sub(1);
 
@@ -131,40 +154,78 @@ impl Document {
         // lines() being called in to_display_rows() would remove
         // one of them. so we add an extra here and inform the 
         // append buffer accordingly
-        if self.content.ends_with('\n') {
-            trace!("newline at end of file");
-            self.append_buffer.join_pos = Position {
-                x: 0,
-                y: last_drow_index.saturating_add(1),
+        if let Some(last_drow) = self.file_drows.last() {
+            // get the line number of the file's last drow
+            let mut last_line_no = last_drow.line_no;
+
+            if self.content.ends_with('\n') {
+                trace!("[document.rs]: newline at end of file");
+                self.append_buffer.join_pos = Position {
+                    x: 0,
+                    y: last_drow_index.saturating_add(1),
+                };
+
+                // since we're adding a new drow which also corresponds to
+                // a line in the file, we need to give it the appropriate
+                // line number
+                last_line_no = last_line_no.saturating_add(1);
+                
+                self.file_drows.push(DisplayRow::from((String::new(), 0, last_line_no)));
+            // otherwise inform the append buffer exactly where it
+            // starts within the display rows
+            } else if let Some(last_drow) = self.file_drows.last() {    
+                self.append_buffer.join_pos = Position {
+                    x: last_drow.len,
+                    y: last_drow_index,
+                };
+                // self.append_buffer.join_content = last_drow.content.clone();
+                
+                // self.file_drows.pop();
             };
-            
-            self.file_drows.push(DisplayRow::from((String::new(), 0)));
-        // otherwise inform the append buffer exactly where it
-        // starts within the display rows
-        } else if let Some(last_drow) = self.file_drows.last() {    
-            self.append_buffer.join_pos = Position {
-                x: last_drow.len,
-                y: last_drow_index,
-            };
-            // self.append_buffer.join_content = last_drow.content.clone();
-            
-            // self.file_drows.pop();
-        };        
+        } else {
+            // not really sure what to do if we can't get the last drow
+            // for now just putting a trace in
+            trace!("[document.rs]: could not get last file display row.");
+        };
     }
 
     pub fn wrap_buffer(&mut self) {
+        // get width to wrap at from terminal width - gutter_size
+        // also add 1 to the gutter size to make room for a space
+        // between the gutter and the row.
+        let max_width = Terminal::get_term_size().0.saturating_sub(self.line_no_digits.saturating_add(1));
+        let start_line_no = if let Some(last_drow) = self.file_drows.last() {
+            last_drow.line_no
+        } else {
+            1
+        };
+        
         self.buf_drows.clear();
         self.buf_drows = to_display_rows(
             self.append_buffer.join_pos.x, 
-            &self.append_buffer.buffer
+            start_line_no,
+            &self.append_buffer.buffer,
+            max_width,
         );
 
         // if there is a newline at the end of the buffer,
         // add an extra display row so that it doesn't get
         // cut off from running lines() in to_display_rows()
-        if self.append_buffer.buffer.ends_with('\n') {
-            trace!("newline at end of buffer");
-            self.buf_drows.push(DisplayRow::from((String::new(), 0)));
+        if let Some(last_drow) = self.buf_drows.last() {
+            // get the line number of the buffer's last drow
+            let mut last_line_no = last_drow.line_no;
+
+            if self.append_buffer.buffer.ends_with('\n') {
+                trace!("[document.rs]: newline at end of buffer");
+                // since we're adding a new drow which also corresponds to
+                // a line in the file, we need to give it the appropriate
+                // line number
+                last_line_no = last_line_no.saturating_add(1);
+                
+                self.buf_drows.push(DisplayRow::from((String::new(), 0, last_line_no)));
+            };
+        } else {
+            trace!("[document.rs]: could not get last buffer display row.");
         };
     }
 
@@ -263,14 +324,17 @@ pub fn render(to_render: &str) -> String {
 }
 
 // wraps a string to display rows
-pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
-    // get terminal width
-    let max_width = Terminal::get_term_size().0;
+pub fn to_display_rows(start_len: usize, start_line_no: usize, to_wrap: &str, max_width: usize) -> Vec<DisplayRow> {
     // create vector to return
     let mut display_rows = Vec::new();
 
     // split string into lines by \n or \r\n
-    for line in to_wrap.lines() {
+    for (index, line) in to_wrap.lines().enumerate() {
+        // add index to the line number we're starting at
+        // (the last line no of self.file_drows or 1)
+        // to get the current line number.
+        let current_line_no = start_line_no.saturating_add(index);
+
         // count length of the line in graphemes so we know
         // how long it will actually display as
         let mut line_display_len = line.graphemes(true).count();
@@ -320,7 +384,7 @@ pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
                     row.push_str(chunk);
                 // otherwise, the combined chunks are a finished row, so push them
                 } else {
-                    display_rows.push(DisplayRow::from((row, row_display_len)));
+                    display_rows.push(DisplayRow::from((row, row_display_len, current_line_no)));
 
                     // reset the row length and row content to be the 
                     // remainder (aka the chunk that would have pushed the
@@ -331,10 +395,10 @@ pub fn to_display_rows(start_len: usize, to_wrap: &str) -> Vec<DisplayRow> {
             };
             // make sure to push the remainder after the for loop
             // has completed
-            display_rows.push(DisplayRow::from((row, row_display_len)));
+            display_rows.push(DisplayRow::from((row, row_display_len, current_line_no)));
         } else {
             // if the line isn't too long, just push it directly.
-            display_rows.push(DisplayRow::from((line.to_string(), line_display_len)));
+            display_rows.push(DisplayRow::from((line.to_string(), line_display_len, current_line_no)));
         };
     };
     display_rows

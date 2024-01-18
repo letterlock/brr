@@ -69,6 +69,11 @@ impl Message {
     }
 }
 
+// i think other things in brr will break before
+// we get to the point where the program can edit
+// a file with a number of lines with more than 255
+// digits (the max of u8)
+#[allow(clippy::cast_possible_truncation)]
 impl Editor {
     pub fn default(file: Metadata, config: Config) -> Self {
         let initial_message = String::from(STANDARD_MESSAGE);
@@ -211,7 +216,6 @@ impl Editor {
         self.snap_view();
     }
 
-    #[allow(clippy::cast_lossless)]
     fn process_keypress(&mut self, key: KeyEvent) {
         let term_height = self.terminal.height;
 
@@ -248,7 +252,7 @@ impl Editor {
                     if self.document.append_buffer.word_count == self.config.save_words as usize
                     && self.config.save_words > 1 {
                         self.save(self.config.save_words, SaveType::Words);
-                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    } else if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0 {
                         self.save(0, SaveType::Time);
@@ -259,7 +263,7 @@ impl Editor {
                 },
                 (_, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
-                    if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0 {
                         self.save(0, SaveType::Time);
@@ -277,7 +281,7 @@ impl Editor {
                     if self.document.append_buffer.word_count == self.config.save_words as usize 
                     && self.config.save_words > 1 {
                         self.save(self.config.save_words, SaveType::Words);
-                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    } else if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0 {
                         self.save(0, SaveType::Time);
@@ -317,7 +321,6 @@ impl Editor {
     // https://github.com/crossterm-rs/crossterm/issues/797
     // https://github.com/crossterm-rs/crossterm/issues/752
     // https://github.com/crossterm-rs/crossterm/pull/778
-    #[allow(clippy::cast_lossless)]
     fn windows_keypress(&mut self, key: KeyEvent) {
         let term_height = self.terminal.height;
 
@@ -355,7 +358,7 @@ impl Editor {
                     if self.document.append_buffer.word_count == self.config.save_words as usize 
                     && self.config.save_words > 1 {
                         self.save(self.config.save_words, SaveType::Words);
-                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    } else if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0 {
                         self.save(0, SaveType::Time);
@@ -366,7 +369,7 @@ impl Editor {
                 },
                 (KeyEventKind::Press, _, KeyCode::Backspace) if self.mode == Mode::Edit => {
                     // skip checking word count if backspacing
-                    if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0 {
                         self.save(0, SaveType::Time);
@@ -385,7 +388,7 @@ impl Editor {
                     if self.document.append_buffer.word_count == self.config.save_words as usize 
                     && self.config.save_words > 1 {
                         self.save(self.config.save_words, SaveType::Words);
-                    } else if self.document.last_edit.elapsed() > Duration::new(self.config.save_time as u64, 0)
+                    } else if self.document.last_edit.elapsed() > Duration::new(u64::from(self.config.save_time), 0)
                     && !self.document.append_buffer.buffer.is_empty() 
                     && self.config.save_time > 0{
                         self.save(0, SaveType::Time);
@@ -415,6 +418,7 @@ impl Editor {
         let term_height = self.terminal.height;
         let max_height = self.document.display_len();
         let last_display_index = max_height.saturating_sub(1);
+        let gutter_len = self.document.line_no_digits.saturating_add(1);
 
         if self.mode == Mode::Edit {
             self.view_pos.y = last_display_index;
@@ -422,13 +426,25 @@ impl Editor {
             // so it should be safe to just get a buffer drow
             // at the last index here
             if let Some(last_buf_drow) = self.document.buf_drows.last() {
-                self.view_pos.x = last_buf_drow.len;
+                if self.config.line_numbers {
+                    self.view_pos.x = last_buf_drow.len.saturating_add(gutter_len);
+                } else {
+                    self.view_pos.x = last_buf_drow.len;
+                };
             } else if let Some(last_file_drow) = self.document.file_drows.last() {
-                self.view_pos.x = last_file_drow.len;
+                if self.config.line_numbers {
+                    self.view_pos.x = last_file_drow.len.saturating_add(gutter_len);
+                } else {
+                    self.view_pos.x = last_file_drow.len;
+                };
             } else {
                 trace!("no last row");
-                self.view_pos.x = 0;
-            }
+                if self.config.line_numbers {
+                    self.view_pos.x = 0_usize.saturating_add(gutter_len);
+                } else {
+                    self.view_pos.x = 0;
+                };
+            };
         } else if self.mode == Mode::View {
             if self.view_pos.y > max_height.saturating_sub((term_height / 2).saturating_add(1)) {
                 self.view_pos.y = max_height.saturating_sub((term_height / 2).saturating_add(1));
@@ -458,64 +474,195 @@ impl Editor {
     fn draw_rows(&mut self) -> Result<(), Error> {
         let term_height = self.terminal.height;
         let editing_offset = self.terminal.height / 2;
+        let mut last_line_no = 0;
 
         for term_row in 0..term_height {
             // draw rows in view mode
             if self.mode == Mode::View {
                 let index_to_display = self.view_pos.y.saturating_add(term_row);
 
-                match self.document.get_display_row(index_to_display) {
-                    (Some(file_drow), None) => {
-                        self.terminal.queue_print(&render(&file_drow.content))?;
-                    },
-                    (None, Some(buf_drow)) => {
-                        self.terminal.queue_print(&render(&buf_drow.content))?;
-                    },
-                    (Some(file_drow), Some(buf_drow)) => {
-                        self.terminal.queue_print(&render(&file_drow.content))?;
-                        self.terminal.queue_print(&render(&buf_drow.content))?;
-                    },
-                    (None, None) => {
-                        self.terminal.queue_print("~")?;
-                    },
-                };
+                // since print_row() returns the line number of the row it's working on
+                // i can set last_line_no and print the row at the same time
+                last_line_no = self.print_row(index_to_display, last_line_no)?;
+
+                // match self.document.get_display_row(index_to_display) {
+                //     (Some(file_drow), None) => {
+                //         let file_content = render(&file_drow.content);
+                //         let to_print = format!(" {file_content}");
+                //         if last_line_no == file_drow.line_no {
+                //             gutter = " ".repeat(line_no_digits);
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         } else {
+                //             gutter = format!("{:>line_no_digits$}", file_drow.line_no.to_string());
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         }
+                //         last_line_no = file_drow.line_no;
+                //         self.terminal.queue_print(&to_print)?;
+                //     },
+                //     (None, Some(buf_drow)) => {
+                //         let buf_content = render(&buf_drow.content);
+                //         let to_print = format!(" {buf_content}");
+                //         if last_line_no == buf_drow.line_no {
+                //             gutter = " ".repeat(line_no_digits);
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         } else {
+                //             gutter = format!("{:>line_no_digits$}", buf_drow.line_no.to_string());
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         }
+                //         last_line_no = buf_drow.line_no;
+                //         self.terminal.queue_print(&to_print)?;
+                //     },
+                //     (Some(file_drow), Some(buf_drow)) => {
+                //         let file_content = render(&file_drow.content);
+                //         let buf_content = render(&buf_drow.content);
+                //         let to_print = format!(" {file_content}{buf_content}");
+                //         if last_line_no == file_drow.line_no {
+                //             let gutter = " ".repeat(self.document.line_no_digits);
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         } else {
+                //             self.terminal.queue_print_reversed(&file_drow.line_no.to_string())?;
+                //         }
+                //         last_line_no = file_drow.line_no;
+                //         self.terminal.queue_print(&render(&to_print))?;
+                //     },
+                //     (None, None) => {
+                //         let gutter = " ".repeat(self.document.line_no_digits);
+                //         self.terminal.queue_print_reversed(&gutter)?;
+                //         self.terminal.queue_print(" ~")?;
+                //     },
+                // };
             // draw rows in edit/prompt mode
             // by checking if ((view position's y + current term row) - editing offset) 
             // does not overflow (read: would not become less than zero), we can make sure
             // to keep the view in the middle of the screen and print '~' before it
             } else if let Some(index_to_display) = self.view_pos.y.saturating_add(term_row).checked_sub(editing_offset) {
-                match self.document.get_display_row(index_to_display) {
-                    (Some(file_drow), None) => {
-                        self.terminal.queue_print(&render(&file_drow.content))?;
-                    },
-                    (None, Some(buf_drow)) => {
-                        if buf_drow.content.is_empty() {
-                            self.terminal.reverse_colors()?;
-                            self.terminal.queue_print(" ")?;
-                            self.terminal.no_reverse_colors()?;
-                        } else {
-                            self.terminal.reverse_colors()?;
-                            self.terminal.queue_print(&render(&buf_drow.content))?;
-                            self.terminal.no_reverse_colors()?;
-                        }
-                    },
-                    (Some(file_drow), Some(buf_drow)) => {
-                        self.terminal.queue_print(&render(&file_drow.content))?;
-                        self.terminal.reverse_colors()?;
-                        self.terminal.queue_print(&render(&buf_drow.content))?;
-                        self.terminal.no_reverse_colors()?;
-                    },
-                    (None, None) => {
-                        self.terminal.queue_print("~")?;
-                    },
-                };
+                // since print_row() returns the line number of the row it's working on
+                // i can set last_line_no and print the row at the same time
+                last_line_no = self.print_row(index_to_display, last_line_no)?;
+
+                // match self.document.get_display_row(index_to_display) {
+                //     (Some(file_drow), None) => {
+                //         let file_content = render(&file_drow.content);
+                //         let to_print = format!(" {file_content}");
+                //         if last_line_no == file_drow.line_no {
+                //             gutter = " ".repeat(line_no_digits);
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         } else {
+                //             gutter = format!("{:>line_no_digits$}", file_drow.line_no.to_string());
+                //             self.terminal.queue_print_reversed(&gutter)?;
+                //         }                      
+                //         self.terminal.queue_print(&to_print)?;
+                //     },
+                //     (None, Some(buf_drow)) => {
+                //         if buf_drow.content.is_empty() {
+                //             self.terminal.queue_print_reversed(" ")?;
+                //         } else {
+                //             self.terminal.reverse_colors()?;
+                //             self.terminal.queue_print(&render(&buf_drow.content))?;
+                //             self.terminal.no_reverse_colors()?;
+                //         }
+                //     },
+                //     (Some(file_drow), Some(buf_drow)) => {
+                //         self.terminal.queue_print(&render(&file_drow.content))?;
+                //         self.terminal.reverse_colors()?;
+                //         self.terminal.queue_print(&render(&buf_drow.content))?;
+                //         self.terminal.no_reverse_colors()?;
+                //     },
+                //     (None, None) => {
+                //         let gutter = " ".repeat(self.document.line_no_digits);
+                //         self.terminal.queue_print_reversed(&gutter)?;
+                //         self.terminal.queue_print(" ~")?;
+                //     },
+                // };
             } else {
+                if self.config.line_numbers {
+                    let gutter = " ".repeat(self.document.line_no_digits);
+                    self.terminal.queue_print_reversed(&gutter)?;
+                    self.terminal.queue_print(" ")?;
+                }
                 self.terminal.queue_print("~")?;
             }
             self.terminal.clear_line()?;
             self.terminal.new_line()?;
         }
         Ok(())
+    }
+
+    fn print_row(&mut self, row_index: usize, last_line_no: usize) -> Result<usize, Error> {
+        let line_no_digits = self.document.line_no_digits;
+        let gutter;
+
+        match self.document.get_display_row(row_index) {
+            (Some(file_drow), None) => {
+                let file_content = render(&file_drow.content);
+
+                if self.config.line_numbers {
+                    if last_line_no == file_drow.line_no {
+                        gutter = " ".repeat(line_no_digits);
+                        self.terminal.queue_print_reversed(&gutter)?;
+                    } else {
+                        gutter = format!("{:>line_no_digits$}", file_drow.line_no.to_string());
+                        self.terminal.queue_print_reversed(&gutter)?;
+                    };
+                    self.terminal.queue_print(" ")?;
+                };
+                
+                self.terminal.queue_print(&file_content)?;
+                Ok(file_drow.line_no)
+            },
+            (None, Some(buf_drow)) => {
+                let buf_content = render(&buf_drow.content);
+
+                if self.config.line_numbers {
+                    if last_line_no == buf_drow.line_no {
+                        gutter = " ".repeat(line_no_digits);
+                        self.terminal.queue_print_reversed(&gutter)?;
+                    } else {
+                        gutter = format!("{:>line_no_digits$}", buf_drow.line_no.to_string());
+                        self.terminal.queue_print_reversed(&gutter)?;
+                    };
+                    self.terminal.queue_print(" ")?;
+                };
+                if self.mode == Mode::View {
+                    self.terminal.queue_print(&buf_content)?;
+                } else if buf_content.is_empty() {
+                    self.terminal.queue_print_reversed(" ")?;
+                } else {
+                    self.terminal.queue_print_reversed(&buf_content)?;
+                }
+                Ok(buf_drow.line_no)
+            },
+            (Some(file_drow), Some(buf_drow)) => {
+                let file_content = render(&file_drow.content);
+                let buf_content = render(&buf_drow.content);
+
+                if self.config.line_numbers {
+                    if last_line_no == file_drow.line_no {
+                        let gutter = " ".repeat(self.document.line_no_digits);
+                        self.terminal.queue_print_reversed(&gutter)?;
+                    } else {
+                        self.terminal.queue_print_reversed(&file_drow.line_no.to_string())?;
+                    }
+                    self.terminal.queue_print(" ")?;
+                }
+                self.terminal.queue_print(&file_content)?;
+                if self.mode == Mode::View {
+                    self.terminal.queue_print(&buf_content)?;
+                } else {
+                    self.terminal.queue_print_reversed(&buf_content)?;
+                }
+                Ok(file_drow.line_no)
+            },
+            (None, None) => {
+                if self.config.line_numbers {
+                    let gutter = " ".repeat(self.document.line_no_digits);
+                    self.terminal.queue_print_reversed(&gutter)?;
+                    self.terminal.queue_print(" ")?;
+                }
+                self.terminal.queue_print("~")?;
+                Ok(0)
+            },
+        }
     }
 
     fn draw_status_bar(&mut self) -> Result<(), Error>{

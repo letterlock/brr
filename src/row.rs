@@ -5,14 +5,16 @@
 pub struct DisplayRow {
     pub content: String,
     pub len: usize,
+    pub line_no: usize,
 }
 
 
-impl From<(String, usize)> for DisplayRow {
-    fn from((line, len): (String, usize)) -> Self {
+impl From<(String, usize, usize)> for DisplayRow {
+    fn from((line, len, line_no): (String, usize, usize)) -> Self {
         DisplayRow {
             content: line,
             len,
+            line_no,
         }
     }
 }

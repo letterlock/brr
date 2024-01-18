@@ -1,10 +1,14 @@
+# folders
 /.vscode
+/projectFiles
 /target
+
+# test files
 /test
 /test2
 /test3
 /name.md
-/brr.log
-/brr.conf
 /frankenstein.txt
 /shakespeare.txt
+
+/Cargo.toml.bak

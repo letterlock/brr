@@ -14,7 +14,7 @@
 start-edit = true
 
 # open-search
-#   when this is active and you open a file without
+#   when this is true and you open a file without
 #   an extension at the end, brr will automatically
 #   search the current working directory for a file
 #   matching that name in either .txt or .md format
@@ -24,7 +24,7 @@ start-edit = true
 open-search = true
 
 # quit-word-count
-#   when this is active, brr will give you an
+#   when this is true, brr will give you an
 #   approximate count of how many words and
 #   characters you wrote during the session.
 #   note: if you open a new file without closing
@@ -33,6 +33,14 @@ open-search = true
 # options: true, false
 # default: count-on-quit = true
 count-on-quit = true
+
+# line-numbers
+#   when this is true, brr will show your file's
+#   line numbers in a gutter on the left side of
+#   the window.
+# options: true, false
+# default: line-numbers = true
+line-numbers = true
 
 # cursor-style
 #   change the style of your cursor. you can choose
